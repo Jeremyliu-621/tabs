@@ -1,4 +1,4 @@
-# UI/UX Design Rules
+# UI/UX Design Rules. Even though I provide numbers here, they are subject to change on my demand. If I specify that "h1 should be bigger" for example, update these rules below, and update everything else to follow it.
 
 ## Typography
 - Primary Font: Tiempos Text Regular

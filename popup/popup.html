@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tabs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <h1 class="popup-title">Tabs</h1>
+      <div class="header-actions">
+        <button class="btn-icon" id="btn-refresh" title="Refresh">↻</button>
+        <span class="status-badge" id="status-badge">Tracking</span>
+      </div>
+    </header>
+
+    <!-- Stats bar -->
+    <div class="stats-row" id="stats-row">
+      <div class="stat">
+        <span class="stat-value" id="stat-events">–</span>
+        <span class="stat-label">events</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-domains">–</span>
+        <span class="stat-label">domains</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-sessions">–</span>
+        <span class="stat-label">sessions</span>
+      </div>
+    </div>
+
+    <!-- Tab navigation -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="domains">Domains</button>
+      <button class="tab-btn" data-tab="connections">Connections</button>
+      <button class="tab-btn" data-tab="sessions">Sessions</button>
+      <button class="tab-btn" data-tab="log">Event Log</button>
+    </nav>
+
+    <!-- Tab panels -->
+    <div class="tab-panels">
+
+      <!-- Domains panel -->
+      <div class="tab-panel active" id="panel-domains">
+        <div class="panel-empty" id="domains-empty">No domains tracked yet.</div>
+        <div class="domain-list" id="domain-list"></div>
+      </div>
+
+      <!-- Connections panel -->
+      <div class="tab-panel" id="panel-connections">
+        <div class="panel-empty" id="connections-empty">No connections detected yet.</div>
+        <div class="connection-list" id="connection-list"></div>
+      </div>
+
+      <!-- Sessions panel -->
+      <div class="tab-panel" id="panel-sessions">
+        <div class="panel-empty" id="sessions-empty">No sessions recorded yet.</div>
+        <div class="session-list" id="session-list"></div>
+      </div>
+
+      <!-- Event Log panel -->
+      <div class="tab-panel" id="panel-log">
+        <div class="panel-empty" id="log-empty">No events yet.</div>
+        <div class="event-log" id="event-log"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+
+</html>
