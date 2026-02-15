@@ -42,11 +42,11 @@ body {
   color: var(--color-text);
   background: var(--color-bg);
   width: 400px;
-  height: 520px;
+  height: 540px;
   overflow: hidden;
 }
 
-/* ── Container ──────────────────────────────────────────────── */
+/* ── Layout ─────────────────────────────────────────────────── */
 
 .popup-container {
   padding: var(--space-base) var(--space-lg);
@@ -69,7 +69,6 @@ body {
   font-size: 1.25rem;
   font-weight: 700;
   line-height: 1.2;
-  color: var(--color-text);
 }
 
 .header-actions {
@@ -90,7 +89,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease;
+  font-family: inherit;
 }
 
 .btn-icon:hover {
@@ -98,51 +98,361 @@ body {
   color: var(--color-text);
 }
 
-.status-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--color-success);
-  background: #E8F5EC;
-  padding: 2px var(--space-sm);
-  border-radius: 9999px;
-  letter-spacing: 0.02em;
-}
+/* ── View Toggle ────────────────────────────────────────────── */
 
-/* ── Stats Row ──────────────────────────────────────────────── */
-
-.stats-row {
+.view-toggle {
   display: flex;
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-base);
+  gap: 2px;
+  flex-shrink: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  padding: 2px;
+}
+
+.view-btn {
+  flex: 1;
+  padding: var(--space-xs) var(--space-sm);
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.view-btn.active {
+  background: var(--color-accent-subtle);
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.view-btn:hover:not(.active) {
+  color: var(--color-text);
+}
+
+/* ── View Panels ────────────────────────────────────────────── */
+
+.view-panel {
+  display: none;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.view-panel.active {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PROJECT LIST
+   ══════════════════════════════════════════════════════════════ */
+
+.project-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-xl) var(--space-base);
+  color: var(--color-text-secondary);
+}
+
+.empty-state p {
+  font-size: 0.875rem;
+}
+
+.empty-sub {
+  margin-top: var(--space-xs);
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.empty-state.hidden {
+  display: none;
+}
+
+/* ── Project Card ───────────────────────────────────────────── */
+
+.project-card {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.project-card:last-child {
+  border-bottom: none;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-md) 0;
+  cursor: pointer;
+  gap: var(--space-sm);
+  user-select: none;
+}
+
+.project-header:hover .project-name {
+  color: var(--color-accent);
+}
+
+.project-expand {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
   flex-shrink: 0;
 }
 
-.stat {
+.project-card.expanded .project-expand {
+  transform: rotate(90deg);
+}
+
+.project-name {
   flex: 1;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.stat-value {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 0.95rem;
+  font-weight: 600;
   color: var(--color-text);
-  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s ease;
 }
 
-.stat-label {
+.project-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.project-time {
   font-size: 0.7rem;
   color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-/* ── Tab Navigation ─────────────────────────────────────────── */
+.project-star {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--color-border);
+  transition: color 0.15s ease;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.project-star:hover,
+.project-star.starred {
+  color: var(--color-accent);
+}
+
+/* ── Branches ───────────────────────────────────────────────── */
+
+.project-branches {
+  display: none;
+  padding: 0 0 var(--space-md) var(--space-lg);
+}
+
+.project-card.expanded .project-branches {
+  display: block;
+}
+
+.branch-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-base);
+}
+
+.branch-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  min-width: 100px;
+  max-width: 160px;
+}
+
+.branch-tree-line {
+  color: var(--color-border);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.branch-name {
+  font-size: 0.75rem;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: color 0.15s ease;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.branch-name:hover {
+  color: var(--color-accent);
+}
+
+.branch-tabs {
+  padding-left: var(--space-base);
+  margin-top: 2px;
+}
+
+.branch-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 0.65rem;
+  color: var(--color-text-secondary);
+  padding: 1px 0;
+}
+
+.branch-tab-link {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+  transition: color 0.15s ease;
+}
+
+.branch-tab-link:hover {
+  color: var(--color-accent);
+}
+
+.branch-tab-prefix {
+  color: var(--color-border);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* ── Project Actions ────────────────────────────────────────── */
+
+.project-actions {
+  display: none;
+  padding: var(--space-sm) 0 var(--space-md) var(--space-lg);
+  gap: var(--space-sm);
+}
+
+.project-card.expanded .project-actions {
+  display: flex;
+}
+
+.btn {
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  transition: all 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--color-text);
+  color: var(--color-surface);
+  border-color: var(--color-text);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.btn-secondary:hover {
+  border-color: var(--color-accent);
+}
+
+.btn-danger {
+  background: var(--color-surface);
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+.btn-danger:hover {
+  background: var(--color-error);
+  color: var(--color-surface);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MODAL
+   ══════════════════════════════════════════════════════════════ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(45, 43, 40, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-overlay.hidden {
+  display: none;
+}
+
+.modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-base);
+}
+
+.modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.modal-input {
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: var(--space-md) var(--space-base);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.modal-input:focus {
+  border-color: var(--color-accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DEBUG VIEW (carried over from Phase 1)
+   ══════════════════════════════════════════════════════════════ */
 
 .tab-nav {
   display: flex;
@@ -175,8 +485,6 @@ body {
   border-bottom-color: var(--color-accent);
 }
 
-/* ── Tab Panels ─────────────────────────────────────────────── */
-
 .tab-panels {
   flex: 1;
   overflow: hidden;
@@ -205,8 +513,7 @@ body {
   display: none;
 }
 
-/* ── Domain List ────────────────────────────────────────────── */
-
+/* Domain list */
 .domain-item {
   display: flex;
   align-items: center;
@@ -235,7 +542,6 @@ body {
 .domain-name {
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -257,8 +563,7 @@ body {
   text-align: right;
 }
 
-/* ── Connection List ────────────────────────────────────────── */
-
+/* Connection list */
 .connection-item {
   display: flex;
   align-items: center;
@@ -274,7 +579,6 @@ body {
 .connection-pair {
   flex: 1;
   font-size: 0.8rem;
-  color: var(--color-text);
   min-width: 0;
 }
 
@@ -294,8 +598,7 @@ body {
   flex-shrink: 0;
 }
 
-/* ── Session List ───────────────────────────────────────────── */
-
+/* Session list */
 .session-item {
   padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--color-border);
@@ -334,12 +637,10 @@ body {
   padding: 1px var(--space-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  color: var(--color-text);
   background: var(--color-surface);
 }
 
-/* ── Event Log ──────────────────────────────────────────────── */
-
+/* Event log */
 .event-item {
   display: flex;
   align-items: flex-start;
@@ -397,7 +698,6 @@ body {
 
 .event-domain {
   font-weight: 600;
-  color: var(--color-text);
 }
 
 .event-title {
@@ -424,19 +724,23 @@ body {
 
 /* ── Scrollbar ──────────────────────────────────────────────── */
 
+.project-list::-webkit-scrollbar,
 .tab-panel::-webkit-scrollbar {
   width: 4px;
 }
 
+.project-list::-webkit-scrollbar-track,
 .tab-panel::-webkit-scrollbar-track {
   background: transparent;
 }
 
+.project-list::-webkit-scrollbar-thumb,
 .tab-panel::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 2px;
 }
 
+.project-list::-webkit-scrollbar-thumb:hover,
 .tab-panel::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-secondary);
 }

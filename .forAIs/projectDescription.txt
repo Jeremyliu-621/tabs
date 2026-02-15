@@ -1,0 +1,1003 @@
+================================================================================
+TABS - CHROME EXTENSION PROJECT CONTEXT
+================================================================================
+
+PROJECT OVERVIEW
+================================================================================
+
+PROJECT NAME: Tabs
+TYPE: Chrome Browser Extension (Manifest V3)
+PURPOSE: Automatic tab organization and context switching for productivity
+
+CORE PROBLEM WE'RE SOLVING:
+People juggling multiple projects waste 30-60 minutes per day manually 
+reopening tabs and reconstructing their workspace when switching contexts. 
+This creates psychological friction that makes people procrastinate.
+
+THE 5-MINUTE RULE PROBLEM:
+The productivity "5-minute rule" states that starting something for just 5 
+minutes helps overcome procrastination. Our current workflow does the opposite - 
+you need to WORK for 5 minutes (setting up tabs, finding links, etc.) before 
+you can START working. This barrier is what we're eliminating.
+
+TARGET USERS:
+- Primary: University students (engineering, CS) juggling 4-6 courses
+- Secondary: Freelancers and remote workers managing 3-5 client projects
+- Characteristics: High context-switching frequency (5-10 times per day)
+
+THE SOLUTION:
+An intelligent Chrome extension that passively learns which tabs belong together,
+automatically groups them into projects, and lets users switch between projects
+with one click. Zero manual setup required.
+
+
+CORE FEATURES (MVP)
+================================================================================
+
+1. PASSIVE TAB TRACKING
+   - Monitors all tab events (created, updated, removed, activated)
+   - Tracks time spent on each tab
+   - Records which tabs are open together
+   - Stores tab metadata: URL, title, domain, timestamps
+   - Runs silently in background with zero user intervention
+
+2. AUTOMATIC PROJECT DETECTION
+   - Uses AI (Claude/GPT) to group related tabs into projects
+   - Filters out unproductive tabs (YouTube Shorts, random browsing)
+   - Names projects intelligently ("ECE110 Assignment" not "Project 1")
+   - Understands context (YouTube can be work OR procrastination)
+   - Runs every 20 minutes OR when 5+ new tabs opened
+
+3. ONE-CLICK PROJECT SWITCHING
+   - Click project → closes all current tabs → opens project tabs
+   - Instant switching (no manual closing/opening)
+   - Remembers which project was active
+   - Can restore without closing current tabs (preview mode)
+
+4. SMART RESTORE
+   - When reopening Chrome, shows recent projects
+   - "Resume [Project Name]?" popup with one-click restore
+   - Prioritizes most recently used projects
+   - Shows confidence level for each project
+
+5. MANUAL OVERRIDE
+   - Users can manually create projects
+   - Can edit/rename auto-detected projects
+   - Can delete projects
+   - Can add/remove tabs from projects
+
+
+KEY USER FLOWS
+================================================================================
+
+FLOW 1: FIRST-TIME USER
+1. User installs extension
+2. Extension starts tracking tabs silently (no UI, no setup)
+3. After 20-30 minutes of browsing, extension has collected data
+4. User clicks extension icon
+5. Sees 2-3 auto-detected projects with smart names
+6. Clicks "Switch to [Project Name]"
+7. Tabs switch instantly - magic moment achieved
+
+FLOW 2: DAILY CONTEXT SWITCHING
+Morning: Working on ECE110 assignment (Quercus, PDFs, Google Docs, MATLAB)
+Afternoon: Need to switch to side project
+- User clicks extension icon
+- Clicks "Switch to Side Project"
+- Extension closes all 8 ECE110 tabs
+- Opens exact 5 tabs from yesterday's side project work
+- User starts working immediately (10 seconds total)
+Evening: Back to ECE110
+- One click switches back
+- No mental overhead remembering what tabs were needed
+
+FLOW 3: REOPENING CHROME
+1. User closes Chrome (battery died, restart, etc.)
+2. User opens Chrome next day
+3. Extension popup appears: "Resume ECE110 Assignment?"
+4. Shows the 8 tabs that were open
+5. User clicks "Yes" → everything restored
+6. User starts working immediately
+
+
+TECHNICAL ARCHITECTURE
+================================================================================
+
+TECH STACK:
+- Chrome Extension (Manifest V3)
+- JavaScript (ES6+, async/await)
+- Chrome Storage API (chrome.storage.local) for persistence
+- Chrome Tabs API (chrome.tabs) for tab management
+- Claude API (Anthropic) or OpenAI API for AI grouping
+- Modern CSS (or Tailwind) for UI
+
+MANIFEST V3 REQUIREMENTS:
+- Background service worker (not persistent background page)
+- chrome.storage.local (not localStorage)
+- Promises/async-await (not callbacks)
+- Proper permissions: tabs, storage, activeTab
+
+FILE STRUCTURE (EXPECTED):
+tabs-extension/
+├── manifest.json              # Extension config
+├── src/
+│   ├── background.js          # Service worker - tab tracking, analysis
+│   ├── popup.html             # Extension popup UI
+│   ├── popup.js               # Popup logic and UI interactions
+│   ├── storage.js             # Storage abstraction layer
+│   ├── patterns.js            # Heuristic-based grouping (local)
+│   ├── ai-analysis.js         # AI-powered grouping (Claude/OpenAI)
+│   └── utils.js               # Helper functions
+├── styles/
+│   └── popup.css              # Styling
+├── icons/                     # Extension icons (128x128, 48x48, 16x16)
+├── config.js                  # API keys and config
+└── README.md
+
+
+DATA MODELS & STORAGE SCHEMA
+================================================================================
+
+STORAGE STRUCTURE (chrome.storage.local):
+
+1. TAB HISTORY
+{
+  "tabHistory": [
+    {
+      "id": 123,                    // Chrome tab ID
+      "url": "https://github.com/user/repo",
+      "title": "Fix login bug - GitHub",
+      "domain": "github.com",
+      "timestamp": 1704067200000,   // When opened
+      "timeSpent": 1200,            // Seconds on this tab
+      "sessionId": "sess_abc123",   // Which browsing session
+      "lastActive": 1704068400000   // When last focused
+    },
+    // ... more tabs
+  ]
+}
+
+2. PROJECTS
+{
+  "projects": [
+    {
+      "id": "proj_xyz789",
+      "name": "ECE110 Assignment",
+      "tabs": [
+        "https://quercus.utoronto.ca/courses/...",
+        "https://docs.google.com/document/...",
+        "https://www.overleaf.com/project/..."
+      ],
+      "createdAt": 1704067200000,
+      "lastUsed": 1704153600000,
+      "type": "auto",               // "auto" or "manual"
+      "confidence": 0.92,            // AI confidence (0-1)
+      "reasoning": "Academic work - course portal + docs",
+      "metadata": {
+        "primaryDomain": "quercus.utoronto.ca",
+        "category": "academic",
+        "estimatedTime": 3600
+      }
+    },
+    // ... more projects
+  ]
+}
+
+3. USER PREFERENCES
+{
+  "preferences": {
+    "autoAnalysisEnabled": true,
+    "analysisInterval": 20,          // Minutes
+    "minTabsForProject": 3,
+    "showConfidenceScores": false,
+    "theme": "light",
+    "aiProvider": "claude"           // "claude" or "openai"
+  }
+}
+
+4. ANALYSIS STATE
+{
+  "analysisState": {
+    "lastAnalysis": 1704153600000,
+    "tabsSinceLastAnalysis": 7,
+    "analysisCount": 45,
+    "creditsRemaining": 15           // For free tier limits
+  }
+}
+
+
+TAB TRACKING IMPLEMENTATION DETAILS
+================================================================================
+
+EVENTS TO TRACK:
+- chrome.tabs.onCreated → New tab opened
+- chrome.tabs.onUpdated → Tab URL/title changed  
+- chrome.tabs.onActivated → User switched to this tab
+- chrome.tabs.onRemoved → Tab closed
+- chrome.windows.onFocusChanged → User switched windows
+
+TRACKING LOGIC:
+1. When tab is created: Store initial data
+2. When tab is activated: Start timer for time tracking
+3. When tab is deactivated: Stop timer, update timeSpent
+4. When tab is updated: Update title/URL if changed
+5. When tab is removed: Mark as closed, keep in history
+
+TIME TRACKING:
+- Track "active time" not just "open time"
+- Only count time when tab is focused AND window is focused
+- Use chrome.idle API to detect when user is away
+- Stop tracking if user idle for >2 minutes
+
+SESSION DETECTION:
+- Session = group of tabs opened within 5 minutes of each other
+- New session starts after 10+ minute gap in browsing
+- Used as input for pattern detection
+
+
+PATTERN DETECTION (TWO-TIER SYSTEM)
+================================================================================
+
+TIER 1: LOCAL HEURISTICS (Always running, free, instant)
+
+ALGORITHM:
+1. Time-based clustering
+   - Group tabs opened within 5-minute windows
+   - If 3+ tabs in same window, create potential project
+
+2. Co-occurrence analysis
+   - Track which tabs are open together frequently
+   - If tabs A, B, C appear together 3+ times, group them
+
+3. Domain relationships
+   - Known patterns: github.com + stackoverflow.com = coding
+   - .edu domains + Google Docs = academic work
+   - Design tools (Figma, Canva) + Google Drive = design project
+
+4. Time-spent filtering
+   - Tabs with <30 seconds = probably unimportant
+   - Tabs with >2 minutes = probably important
+   - Use as weight in grouping decisions
+
+5. URL pattern recognition
+   - youtube.com/shorts/* = ignore (entertainment)
+   - youtube.com/watch?v=tutorial_id = keep (learning)
+   - reddit.com/r/funny = ignore
+   - reddit.com/r/machinelearning = keep (if with research tabs)
+
+OUTPUT:
+Basic projects with auto-generated names like:
+- "Project 1" (can be improved with AI)
+- Named by primary domain: "GitHub Project"
+- Named by time: "Morning Work Session"
+
+TIER 2: AI REFINEMENT (On-demand, accurate, uses API credits)
+
+WHEN TRIGGERED:
+- User clicks "✨ Improve with AI" button
+- Automatic when user has >10 unorganized tabs
+- After major browsing session (20+ tabs opened)
+
+API CALL STRUCTURE:
+Send to Claude/GPT:
+{
+  "tabs": [
+    {
+      "url": "https://github.com/user/repo",
+      "title": "Fix login bug",
+      "timeSpent": 1200,
+      "domain": "github.com",
+      "openedWith": ["stackoverflow.com", "localhost:3000"]
+    },
+    // ... more tabs
+  ],
+  "existingProjects": [
+    // Any projects already created by heuristics
+  ]
+}
+
+PROMPT STRUCTURE:
+"""
+Analyze these browser tabs and group them into meaningful work projects.
+
+Context: User is juggling multiple projects. Each tab has URL, title, and time spent.
+
+Your task:
+1. FILTER: Remove unproductive tabs (entertainment, random browsing)
+   - Exception: Same site can be work in different contexts
+   - Use time spent as signal (30s = probably not important)
+   
+2. GROUP: Cluster related tabs into projects
+   - Consider domain relationships (GitHub + Stack Overflow = coding)
+   - Consider content similarity (multiple research papers = research)
+   - Consider time patterns (opened together = related)
+   
+3. NAME: Give each project a descriptive, specific name
+   - Use actual content: "ECE110 Lab Report" not "School Project"
+   - Be concise: 2-4 words maximum
+   - Make it recognizable at a glance
+   
+4. CONFIDENCE: Rate your confidence (0-1) for each grouping
+
+Return JSON:
+{
+  "projects": [
+    {
+      "name": "ECE110 Lab Report",
+      "tabs": ["url1", "url2"],
+      "reasoning": "Academic work - course portal + LaTeX editor",
+      "confidence": 0.95,
+      "category": "academic"
+    }
+  ],
+  "filtered": [
+    {"url": "youtube.com/shorts/xyz", "reason": "Short-form entertainment"}
+  ]
+}
+
+Be smart about context. YouTube can be work (tutorials) or not (Shorts).
+Reddit can be research (r/machinelearning) or procrastination (r/funny).
+Time spent matters: 30 seconds probably not important, 5 minutes definitely is.
+"""
+
+RESPONSE HANDLING:
+1. Parse JSON response
+2. Validate structure
+3. Merge with existing projects (don't create duplicates)
+4. Update project names and confidence scores
+5. Cache results for 24 hours
+6. Show "✨ AI-Refined" badge on these projects
+
+ERROR HANDLING:
+- Malformed JSON → fallback to heuristics
+- API timeout → retry once, then fallback
+- Rate limit → show "Try again in X minutes"
+- No API key → show upgrade prompt
+
+
+PROJECT SWITCHING IMPLEMENTATION
+================================================================================
+
+SWITCHING LOGIC:
+
+Function: switchToProject(projectId)
+1. Get current open tabs
+2. Save them as "Previous Session" (for undo)
+3. Close all tabs in current window
+4. Open all tabs from selected project
+5. Focus first tab
+6. Update project.lastUsed timestamp
+7. Show success notification
+
+EDGE CASES:
+- What if project has 50 tabs? → Ask user to confirm first
+- What if tabs fail to open? → Show error, restore previous tabs
+- What if user has pinned tabs? → Don't close pinned tabs
+- What if some URLs are invalid? → Skip them, log error
+
+UNDO FUNCTIONALITY:
+- Keep last 3 "sessions" in memory
+- Show "Undo Switch" button for 10 seconds after switch
+- Clicking undo restores previous tab state
+
+
+UI/UX SPECIFICATIONS
+================================================================================
+
+POPUP INTERFACE:
+
+LAYOUT:
+┌─────────────────────────────┐
+│  Tabs                    ⚙️ │ ← Header with settings
+├─────────────────────────────┤
+│  🔍 Search projects...      │ ← Search bar (if >5 projects)
+├─────────────────────────────┤
+│  ✨ Recent Projects          │ ← Section header
+│                             │
+│  📚 ECE110 Assignment       │ ← Project card
+│     8 tabs · 2h ago         │   (name, tab count, last used)
+│     [Switch] [Edit]         │   (action buttons)
+│                             │
+│  💻 Side Project            │ ← Another project
+│     5 tabs · Yesterday      │
+│     [Switch] [Edit]         │
+│                             │
+├─────────────────────────────┤
+│  📋 All Projects (12)    ▼  │ ← Expandable section
+├─────────────────────────────┤
+│  [+ Create Project]         │ ← Manual creation
+│  [✨ Detect Projects]        │ ← Trigger AI analysis
+└─────────────────────────────┘
+
+PROJECT CARD STATES:
+- Default: White background, subtle border
+- Hover: Light blue background, shadow appears
+- Active (current): Blue border, checkmark icon
+- AI-refined: ✨ sparkle badge in corner
+- Low confidence (<0.7): ⚠️ warning icon, lighter text
+
+EMPTY STATES:
+- No projects yet:
+  "Working on something? We're learning your patterns.
+   Open a few tabs and check back in 20 minutes!"
+  [Detect Projects Now]
+
+- No tabs match search:
+  "No projects found. Try a different search term."
+
+LOADING STATES:
+- Fetching projects: Skeleton loaders
+- Switching projects: "Switching to [Name]..." with spinner
+- AI analysis: "🤖 Analyzing your tabs..." with progress indicator
+
+ANIMATIONS:
+- Project cards fade in (stagger by 50ms each)
+- Switch button: Ripple effect on click
+- Smooth transitions between states (200ms ease)
+- Success state: Green checkmark bounce animation
+
+
+BUSINESS MODEL & MONETIZATION
+================================================================================
+
+PRICING TIERS:
+
+FREE TIER:
+- 2 projects maximum
+- Heuristic-based grouping (no AI)
+- Single device only
+- 7-day project history
+- Target: Get users hooked on basic functionality
+
+PAID TIER ($5/month):
+- Unlimited projects
+- AI-powered refinement (15 credits/week)
+- Cross-device sync (when implemented)
+- Unlimited project history
+- Priority support
+- Advanced analytics (time spent per project)
+
+ENTERPRISE TIER ($50/user/year):
+- Everything in Paid
+- Unlimited AI credits
+- Team workspace sharing
+- Admin dashboard
+- SSO integration
+- Custom branding
+
+AI CREDITS SYSTEM:
+- 1 credit = 1 AI analysis
+- Free users: 5 credits/week (to test AI quality)
+- Paid users: 15 credits/week (2-3 per day)
+- Enterprise: Unlimited
+- Unused credits don't roll over
+
+WHY THIS PRICING WORKS:
+- $5/month = impulse buy for students
+- Free tier proves value before asking for money
+- AI credits create clear value differentiation
+- Limited free AI credits = taste of premium features
+- Cost per user (API + infra) ≈ $1-2/month → profitable
+
+CONVERSION STRATEGY:
+1. User installs (free tier)
+2. Uses heuristic grouping for 1 week
+3. Sees "✨ Try AI Refinement" prompt
+4. Uses 1 free credit → sees better results
+5. Runs out of free credits after 5 uses
+6. Upgrade prompt: "Unlock unlimited AI for $5/month"
+7. Shows value: "You've switched projects 47 times this week"
+
+
+API INTEGRATION DETAILS
+================================================================================
+
+CLAUDE API (Anthropic):
+- Endpoint: https://api.anthropic.com/v1/messages
+- Model: claude-sonnet-3-5 (best balance of cost/quality)
+- Authentication: API key in headers
+- Rate limits: 60 requests/minute (plenty for our use)
+- Cost: ~$3 per million tokens
+
+REQUEST FORMAT:
+{
+  "model": "claude-sonnet-3-5-20241022",
+  "max_tokens": 2000,
+  "messages": [
+    {
+      "role": "user",
+      "content": "[tab analysis prompt + data]"
+    }
+  ]
+}
+
+RESPONSE HANDLING:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"projects\": [...], \"filtered\": [...]}"
+    }
+  ]
+}
+
+Parse the JSON from response.content[0].text
+
+ERROR CODES:
+- 401: Invalid API key → show setup prompt
+- 429: Rate limited → show "Try again in X seconds"
+- 500: Server error → fallback to heuristics
+- Network error: Retry once, then fallback
+
+OPENAI API (Alternative):
+- Endpoint: https://api.openai.com/v1/chat/completions  
+- Model: gpt-4-turbo (similar quality to Claude)
+- Use JSON mode: response_format: { "type": "json_object" }
+- Slightly more expensive than Claude
+
+API KEY STORAGE:
+- NEVER commit API keys to git
+- Store in config.js (add to .gitignore)
+- OR use chrome.storage.sync (encrypted by Chrome)
+- For production: Use backend proxy (extension → your server → AI API)
+
+COST OPTIMIZATION:
+- Cache AI responses for 24 hours
+- Don't re-analyze same tabs
+- Batch multiple requests if possible
+- Only send tab metadata, not full content
+- Limit response tokens (2000 max)
+
+
+DEVELOPMENT PHASES & ROADMAP
+================================================================================
+
+PHASE 1: MVP - BASIC TRACKING (Week 1)
+✓ Chrome extension structure
+✓ Tab tracking (all events)
+✓ Storage implementation
+✓ Basic popup UI showing tab data
+✓ Can load extension and see it tracking
+
+PHASE 2: MANUAL PROJECTS (Week 2)
+✓ Create project manually
+✓ Save current tabs as project
+✓ Display projects in popup
+✓ Switch between projects
+✓ Delete/rename projects
+
+PHASE 3: HEURISTIC GROUPING (Week 3)
+✓ Time-based clustering
+✓ Co-occurrence analysis  
+✓ Domain grouping
+✓ Auto-create projects
+✓ Confidence scores
+
+PHASE 4: AI INTEGRATION (Week 4)
+✓ Claude API setup
+✓ AI analysis implementation
+✓ Prompt engineering
+✓ Response parsing
+✓ "Improve with AI" button
+✓ AI credits system
+
+PHASE 5: POLISH & LAUNCH (Week 5)
+✓ UI/UX improvements
+✓ Error handling
+✓ Edge case fixes
+✓ Icons and branding
+✓ README and documentation
+✓ Post on Reddit/ProductHunt
+
+FUTURE PHASES (Post-Launch):
+- Cross-device sync (Firebase/Supabase)
+- Desktop app (Electron) for full workspace management
+- Team sharing features
+- Browser history integration
+- Keyboard shortcuts
+- Custom project icons
+- Productivity analytics dashboard
+- Browser support (Firefox, Edge, Safari)
+
+
+KNOWN CHALLENGES & SOLUTIONS
+================================================================================
+
+CHALLENGE 1: API Costs Too High
+PROBLEM: Analyzing every 10 minutes costs $20/user/month
+SOLUTION: Only analyze on-demand + limited free credits
+STATUS: Solved with hybrid approach
+
+CHALLENGE 2: Chrome Extension Limits
+PROBLEM: Manifest V3 doesn't allow persistent background pages
+SOLUTION: Use service worker + chrome.alarms for periodic tasks
+STATUS: Implemented
+
+CHALLENGE 3: Privacy Concerns
+PROBLEM: Users worried about sending browsing data to API
+SOLUTION: 
+- Only send metadata (URL, title), not content
+- Local heuristics work without API
+- Clear opt-in for AI features
+- Privacy policy in settings
+STATUS: Addressed in design
+
+CHALLENGE 4: Grouping Accuracy
+PROBLEM: Heuristics miss context, AI sometimes wrong
+SOLUTION: 
+- Let users edit any project
+- Manual creation always available
+- Show confidence scores
+- Learn from user corrections (future)
+STATUS: Acceptable for MVP
+
+CHALLENGE 5: Too Many Tabs
+PROBLEM: Some users have 200+ tabs open
+SOLUTION:
+- Limit analysis to recent 50 tabs
+- "Archive old tabs" feature
+- Performance optimization
+STATUS: Needs testing
+
+CHALLENGE 6: Duplicate Projects
+PROBLEM: AI might create project that already exists
+SOLUTION:
+- Check for similar projects before creating
+- Merge similar projects
+- Show "Merge Projects" suggestion
+STATUS: Implemented in AI prompt
+
+CHALLENGE 7: Cold Start Problem  
+PROBLEM: New users have no data, no projects
+SOLUTION:
+- Show helpful empty state
+- Suggest example use cases
+- Quick-start tutorial
+- Demo mode with fake data
+STATUS: Needs UI design
+
+
+TESTING & QUALITY ASSURANCE
+================================================================================
+
+MANUAL TESTING CHECKLIST:
+
+□ Install extension in Chrome
+□ Verify it tracks new tabs
+□ Open 10-15 tabs across different topics
+□ Wait 20 minutes or trigger analysis manually
+□ Check if projects are created
+□ Verify project names make sense
+□ Try switching to a project
+□ Confirm all correct tabs opened
+□ Try switching back
+□ Close Chrome and reopen
+□ Verify projects persisted
+□ Test with 50+ tabs
+□ Test with 0 tabs
+□ Test with only 1 tab
+□ Test manual project creation
+□ Test project deletion
+□ Test project renaming
+□ Break it on purpose (close tabs during switch)
+□ Check chrome.storage.local in DevTools
+
+EDGE CASES TO TEST:
+
+1. User closes tabs while switching
+   - Expected: Extension handles gracefully, shows error
+
+2. User has 100+ tabs
+   - Expected: Only analyzes recent 50, offers to archive rest
+
+3. API call fails
+   - Expected: Falls back to heuristics, shows error message
+
+4. User has no tabs open
+   - Expected: Shows empty state, suggests creating first project
+
+5. All tabs are entertainment
+   - Expected: AI filters them out, no projects created
+
+6. Duplicate project names
+   - Expected: Adds number suffix ("Project Name (2)")
+
+7. Project with 50 tabs
+   - Expected: Shows confirmation before switching
+
+8. Invalid URLs in project
+   - Expected: Skips them, logs error, opens rest
+
+9. Extension disabled then re-enabled
+   - Expected: Continues from last state, no data loss
+
+10. Chrome crashes during switch
+    - Expected: Can recover, doesn't corrupt storage
+
+
+DEBUGGING & LOGGING
+================================================================================
+
+LOG LEVELS:
+- INFO: Normal operations (project created, tab tracked)
+- WARN: Recoverable issues (API timeout, retrying)
+- ERROR: Failures (storage full, invalid data)
+
+LOG FORMAT:
+[TIMESTAMP] [LEVEL] [COMPONENT] Message
+[2024-01-01 10:30:15] [INFO] [background.js] Tab created: github.com
+[2024-01-01 10:30:20] [WARN] [ai-analysis.js] API timeout, retrying...
+[2024-01-01 10:30:25] [ERROR] [storage.js] Storage quota exceeded
+
+KEY THINGS TO LOG:
+- Tab events (created, updated, removed)
+- Project creation (auto vs manual)
+- AI API calls (request, response, errors)
+- Storage operations (read, write, errors)
+- User actions (switch, create, delete)
+- Performance metrics (analysis time, switch time)
+
+DEBUGGING TOOLS:
+- chrome://extensions → Inspect views: service worker
+- Console.log everything during development
+- Chrome DevTools → Application → Storage → Local Storage
+- Performance profiler for slow operations
+
+COMMON ISSUES & FIXES:
+
+ISSUE: "Cannot read property of undefined"
+FIX: Check if data exists before accessing
+console.log(data); // See what's actually there
+
+ISSUE: "Extension context invalidated"
+FIX: Service worker died, restart extension
+This happens in Manifest V3, it's normal
+
+ISSUE: "Unchecked runtime.lastError"
+FIX: Always check chrome.runtime.lastError in callbacks
+
+ISSUE: Storage not persisting
+FIX: Make sure using chrome.storage.local not localStorage
+
+ISSUE: Tabs not closing
+FIX: Check if tab IDs are still valid before chrome.tabs.remove
+
+
+PERFORMANCE CONSIDERATIONS
+================================================================================
+
+OPTIMIZATION TARGETS:
+- Extension overhead: <5MB memory
+- Popup load time: <100ms
+- Project switch time: <2 seconds
+- AI analysis time: <3 seconds
+- Storage operations: <50ms
+
+PERFORMANCE TECHNIQUES:
+
+1. Debounce tab events
+   - Don't process every keystroke that changes title
+   - Wait 500ms after last change before saving
+
+2. Batch storage writes
+   - Don't write on every tab update
+   - Batch writes every 5 seconds
+
+3. Lazy load projects
+   - Load recent 5 projects immediately
+   - Load rest on scroll/expand
+
+4. Cache AI responses
+   - Store for 24 hours
+   - Don't re-analyze same tabs
+
+5. Limit tab history
+   - Keep last 7 days only
+   - Archive older data
+
+6. Optimize queries
+   - Index by timestamp for fast recent queries
+   - Use chrome.storage.local.get with specific keys
+
+
+SECURITY & PRIVACY
+================================================================================
+
+DATA COLLECTED:
+- Tab URLs (only domains for analysis)
+- Tab titles
+- Time spent on each tab
+- Timestamps
+- User preferences
+
+DATA NOT COLLECTED:
+- Page content
+- Form inputs
+- Passwords
+- Cookies
+- Personal information
+
+DATA STORAGE:
+- Local: chrome.storage.local (encrypted by Chrome)
+- API: Temporary (only during analysis, not stored)
+- No server storage in MVP
+
+API PRIVACY:
+- Only send necessary metadata
+- Don't send full URLs for sensitive domains (banking, health)
+- Strip query parameters that might contain sensitive data
+- Clear opt-in for AI features
+
+PERMISSIONS:
+- tabs: Required for tab management
+- storage: Required for persistence  
+- activeTab: Required for tracking
+- alarms: Required for periodic analysis
+
+MANIFEST PERMISSIONS:
+Keep permissions minimal. Don't request:
+- "all_urls" (too broad)
+- "cookies" (not needed)
+- "history" (not needed for MVP)
+
+
+GETTING STARTED (FOR NEW AI ASSISTANT)
+================================================================================
+
+IF YOU'RE READING THIS TO UNDERSTAND THE PROJECT:
+
+1. READ THIS ENTIRE FILE
+   This gives you complete context on what we're building
+
+2. CHECK CURRENT STATE
+   Look at existing files to see what's already implemented
+   
+3. ASK CLARIFYING QUESTIONS
+   "What phase are we in?"
+   "What's working and what needs to be built?"
+   "Are there any known bugs?"
+
+4. UNDERSTAND THE VISION
+   We're not just building a tab manager
+   We're removing psychological barriers to productivity
+   The automatic grouping is what makes this special
+
+5. RESPECT THE CONSTRAINTS
+   - Must be fast (no lag)
+   - Must be automatic (no manual setup)
+   - Must be affordable (API costs <$1/user/month)
+   - Must be private (local-first)
+
+6. FOLLOW THE ARCHITECTURE
+   Don't reinvent the wheel
+   Use the two-tier system (heuristics + AI)
+   Keep the hybrid approach for cost control
+
+
+COMMON PROMPTS FOR AI ASSISTANTS
+================================================================================
+
+"Implement the heuristic grouping algorithm"
+→ Create patterns.js with time/domain/co-occurrence clustering
+
+"Set up Claude API integration"
+→ Create ai-analysis.js with API client and prompt
+
+"Build the tab tracking system"
+→ Update background.js with all chrome.tabs listeners
+
+"Create the popup UI"
+→ Build popup.html/js with project list and switching
+
+"Add error handling for [specific case]"
+→ Add try-catch, fallbacks, user-friendly errors
+
+"Optimize the performance of [specific part]"
+→ Profile, identify bottleneck, apply optimization
+
+"Fix bug: [describe bug]"
+→ Understand issue, locate code, implement fix
+
+"Add feature: [describe feature]"
+→ Design UX, implement logic, test thoroughly
+
+
+IMPORTANT NOTES FOR DEVELOPMENT
+================================================================================
+
+1. ALWAYS use Manifest V3 APIs
+   - Service workers, not background pages
+   - chrome.storage, not localStorage
+   - Promises, not callbacks
+
+2. ALWAYS handle errors
+   - API calls can fail
+   - Storage can be full
+   - Tabs can be closed unexpectedly
+
+3. ALWAYS test in real Chrome
+   - Load extension after every change
+   - Test with real browsing behavior
+   - Try to break it
+
+4. ALWAYS optimize for performance
+   - Extension should be invisible to user
+   - No lag, no delays, no crashes
+   - Memory usage under control
+
+5. ALWAYS consider privacy
+   - Minimize data collection
+   - Clear about what's tracked
+   - Secure storage
+   - No unnecessary permissions
+
+6. ALWAYS think about cost
+   - API calls are expensive at scale
+   - Optimize triggers
+   - Cache aggressively
+   - Make free tier work without API
+
+7. ALWAYS focus on UX
+   - Make it dead simple
+   - Zero setup required
+   - Clear feedback on actions
+   - Handle errors gracefully
+
+
+PROJECT STATUS (UPDATE THIS SECTION)
+================================================================================
+
+CURRENT PHASE: [To be filled in]
+
+COMPLETED:
+- [List completed features]
+
+IN PROGRESS:
+- [List features being worked on]
+
+TODO:
+- [List next features to build]
+
+KNOWN BUGS:
+- [List any known issues]
+
+BLOCKERS:
+- [List anything blocking progress]
+
+
+CONTACT & RESOURCES
+================================================================================
+
+DEVELOPER: Engineering Student at UofT
+GOALS: Ship MVP in 2 weeks, get 100 users, validate idea
+
+KEY RESOURCES:
+- Chrome Extension Docs: https://developer.chrome.com/docs/extensions/
+- Manifest V3 Guide: https://developer.chrome.com/docs/extensions/mv3/
+- Claude API Docs: https://docs.anthropic.com/
+- Storage API: https://developer.chrome.com/docs/extensions/reference/storage/
+
+TESTING ENVIRONMENT:
+- Chrome Version: Latest stable
+- OS: [Mac/Windows/Linux]
+- Development: Cursor / Antigravity AI
+
+================================================================================
+END OF PROJECT CONTEXT
+================================================================================
+
+READING GUIDE FOR AI ASSISTANTS:
+
+This document contains EVERYTHING you need to understand the Tabs extension.
+Read the relevant sections based on what you're being asked to do:
+
+- Building tab tracking? → Read "Tab Tracking Implementation Details"
+- Setting up AI? → Read "Pattern Detection" and "API Integration Details"
+- Working on UI? → Read "UI/UX Specifications"
+- Debugging? → Read "Debugging & Logging" and "Known Challenges"
+- Starting fresh? → Read everything top to bottom
+
+When in doubt, ask the developer for current status and priorities.
+Always align your work with the core vision: automatic, intelligent, zero-setup.
+
+Good luck building! 🚀

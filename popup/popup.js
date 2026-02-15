@@ -1,24 +1,52 @@
 /**
- * Tabs Popup — Debug Dashboard
+ * Tabs Popup — Project Dashboard + Debug View
  *
- * Shows live tracking stats, domain frequencies, co-occurrence
- * connections, browsing sessions, and a raw event log.
+ * Projects view: auto-detected project list with expandable branches,
+ * one-click switching, starring, and manual project creation.
+ *
+ * Debug view: domain frequencies, co-occurrence, sessions, event log.
  */
 
-import { getStats, getDebugAnalytics } from '../background/storage.js';
+import { getDebugAnalytics, getProjects, saveProjects } from '../background/storage.js';
 
 // ── Init ─────────────────────────────────────────────────────
 
 async function init() {
-    setupTabs();
-    document.getElementById('btn-refresh').addEventListener('click', loadData);
+    setupViewToggle();
+    setupDebugTabs();
+    setupModal();
+
+    document.getElementById('btn-refresh').addEventListener('click', async () => {
+        // Trigger re-clustering in the background
+        chrome.runtime.sendMessage({ action: 'runClustering' }, () => {
+            loadData();
+        });
+    });
+
     await loadData();
+
+    // Auto-refresh every 10 seconds so projects stay up-to-date
+    let refreshTimer = setInterval(() => loadData(), 10_000);
+
+    // Pause when popup loses focus, resume on refocus
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            clearInterval(refreshTimer);
+        } else {
+            loadData();
+            refreshTimer = setInterval(() => loadData(), 10_000);
+        }
+    });
 }
 
 async function loadData() {
     try {
-        const [stats, analytics] = await Promise.all([getStats(), getDebugAnalytics()]);
-        renderStats(stats, analytics);
+        const [analytics, projects] = await Promise.all([
+            getDebugAnalytics(),
+            getProjects(),
+        ]);
+
+        renderProjects(projects);
         renderDomains(analytics.domainFrequency);
         renderConnections(analytics.coOccurrencePairs);
         renderSessions(analytics.sessions);
@@ -28,42 +56,346 @@ async function loadData() {
     }
 }
 
-// ── Tab switching ────────────────────────────────────────────
+// ── View toggle (Projects / Debug) ───────────────────────────
 
-function setupTabs() {
-    const buttons = document.querySelectorAll('.tab-btn');
+function setupViewToggle() {
+    const buttons = document.querySelectorAll('.view-btn');
     buttons.forEach((btn) => {
         btn.addEventListener('click', () => {
             buttons.forEach((b) => b.classList.remove('active'));
             btn.classList.add('active');
 
+            document.querySelectorAll('.view-panel').forEach((p) => p.classList.remove('active'));
+            document.getElementById(`view-${btn.dataset.view}`).classList.add('active');
+        });
+    });
+}
+
+// ── Debug tabs ───────────────────────────────────────────────
+
+function setupDebugTabs() {
+    const buttons = document.querySelectorAll('.tab-btn');
+    buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            buttons.forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
             document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
             document.getElementById(`panel-${btn.dataset.tab}`).classList.add('active');
         });
     });
 }
 
-// ── Render functions ─────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// PROJECTS
+// ══════════════════════════════════════════════════════════════
 
-function renderStats(stats, analytics) {
-    document.getElementById('stat-events').textContent = stats.totalEvents.toLocaleString();
-    document.getElementById('stat-domains').textContent = stats.uniqueDomains.toLocaleString();
-    document.getElementById('stat-sessions').textContent = analytics.sessions.length.toLocaleString();
-}
+function renderProjects(projects) {
+    const list = document.getElementById('project-list');
+    const empty = document.getElementById('projects-empty');
 
-function renderDomains(domains) {
-    const list = document.getElementById('domain-list');
-    const empty = document.getElementById('domains-empty');
-    list.innerHTML = '';
+    // Clear existing project cards but keep the empty state
+    list.querySelectorAll('.project-card').forEach((c) => c.remove());
 
-    if (!domains.length) {
+    if (!projects || projects.length === 0) {
         empty.classList.remove('hidden');
         return;
     }
     empty.classList.add('hidden');
 
-    const maxCount = domains[0]?.count || 1;
+    for (const project of projects) {
+        const card = createProjectCard(project);
+        list.appendChild(card);
+    }
+}
 
+function createProjectCard(project) {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+    card.dataset.projectId = project.id;
+
+    // ── Header row
+    const header = document.createElement('div');
+    header.className = 'project-header';
+    header.innerHTML = `
+    <span class="project-expand">▶</span>
+    <span class="project-name">${esc(project.name)}</span>
+    <div class="project-meta">
+      <span class="project-time">${formatTimeAgo(project.lastAccessed)}</span>
+      <button class="project-star ${project.starred ? 'starred' : ''}"
+              title="Star project">${project.starred ? '★' : '☆'}</button>
+    </div>
+  `;
+
+    // Restore expanded state from localStorage
+    const expandedIds = JSON.parse(localStorage.getItem('tabs_expanded_projects') || '[]');
+    if (expandedIds.includes(project.id)) {
+        card.classList.add('expanded');
+    }
+
+    header.addEventListener('click', (e) => {
+        if (e.target.closest('.project-star')) return;
+        card.classList.toggle('expanded');
+
+        // Persist expanded state
+        const isExpanded = card.classList.contains('expanded');
+        const currentExpanded = JSON.parse(localStorage.getItem('tabs_expanded_projects') || '[]');
+        if (isExpanded) {
+            if (!currentExpanded.includes(project.id)) currentExpanded.push(project.id);
+        } else {
+            const idx = currentExpanded.indexOf(project.id);
+            if (idx > -1) currentExpanded.splice(idx, 1);
+        }
+        localStorage.setItem('tabs_expanded_projects', JSON.stringify(currentExpanded));
+    });
+
+    // Star button
+    const starBtn = header.querySelector('.project-star');
+    starBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        project.starred = !project.starred;
+        starBtn.textContent = project.starred ? '★' : '☆';
+        starBtn.classList.toggle('starred', project.starred);
+        // Persist
+        const allProjects = await getProjects();
+        const p = allProjects.find((x) => x.id === project.id);
+        if (p) {
+            p.starred = project.starred;
+            await saveProjects(allProjects);
+        }
+    });
+
+    // ── Branches
+    const branchContainer = document.createElement('div');
+    branchContainer.className = 'project-branches';
+
+    if (project.branches && project.branches.length > 0) {
+        const grid = document.createElement('div');
+        grid.className = 'branch-grid';
+
+        for (let i = 0; i < project.branches.length; i++) {
+            const branch = project.branches[i];
+            const isLast = i === project.branches.length - 1;
+            const branchEl = createBranchElement(branch, isLast);
+            grid.appendChild(branchEl);
+        }
+
+        branchContainer.appendChild(grid);
+    }
+
+    // ── Actions
+    const actions = document.createElement('div');
+    actions.className = 'project-actions';
+
+    const switchBtn = document.createElement('button');
+    switchBtn.className = 'btn btn-primary';
+    switchBtn.textContent = 'Switch to project';
+    switchBtn.addEventListener('click', () => {
+        const allUrls = getAllProjectUrls(project);
+        if (allUrls.length > 0) {
+            chrome.runtime.sendMessage({ action: 'switchToProject', urls: allUrls });
+            window.close();
+        }
+    });
+
+    const openBtn = document.createElement('button');
+    openBtn.className = 'btn btn-secondary';
+    openBtn.textContent = 'Open project';
+    openBtn.addEventListener('click', () => {
+        const allUrls = getAllProjectUrls(project);
+        if (allUrls.length > 0) {
+            chrome.runtime.sendMessage({ action: 'openProjectWindow', urls: allUrls });
+        }
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-danger';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', async () => {
+        const allProjects = await getProjects();
+        const filtered = allProjects.filter((p) => p.id !== project.id);
+        await saveProjects(filtered);
+        card.remove();
+        // Show empty state if no projects left
+        if (filtered.length === 0) {
+            document.getElementById('projects-empty').classList.remove('hidden');
+        }
+    });
+
+    actions.appendChild(switchBtn);
+    actions.appendChild(openBtn);
+    actions.appendChild(deleteBtn);
+
+    card.appendChild(header);
+    card.appendChild(branchContainer);
+    card.appendChild(actions);
+
+    return card;
+}
+
+function createBranchElement(branch, isLast) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'branch-item';
+
+    const prefix = isLast ? '└' : '├';
+
+    const treeEl = document.createElement('span');
+    treeEl.className = 'branch-tree-line';
+    treeEl.textContent = prefix;
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'branch-name';
+    nameEl.textContent = branch.domain;
+    nameEl.title = `Open all ${branch.domain} tabs`;
+    nameEl.addEventListener('click', () => {
+        const urls = branch.tabs.map((t) => t.url);
+        if (urls.length > 0) {
+            chrome.runtime.sendMessage({ action: 'openTabs', urls });
+        }
+    });
+
+    wrapper.appendChild(treeEl);
+
+    const content = document.createElement('div');
+    content.appendChild(nameEl);
+
+    // Show individual tabs under each branch
+    if (branch.tabs && branch.tabs.length > 0) {
+        const tabList = document.createElement('div');
+        tabList.className = 'branch-tabs';
+
+        const displayTabs = branch.tabs.slice(0, 5); // cap display
+        for (let i = 0; i < displayTabs.length; i++) {
+            const tab = displayTabs[i];
+            const isTabLast = i === displayTabs.length - 1 && branch.tabs.length <= 5;
+            const tabEl = document.createElement('div');
+            tabEl.className = 'branch-tab';
+            tabEl.innerHTML = `
+        <span class="branch-tab-prefix">${isTabLast ? '└' : '├'}</span>
+        <a class="branch-tab-link" title="${esc(tab.title)}">${esc(truncate(tab.title, 25))}</a>
+      `;
+            tabEl.querySelector('.branch-tab-link').addEventListener('click', () => {
+                chrome.runtime.sendMessage({ action: 'openTabs', urls: [tab.url] });
+            });
+            tabList.appendChild(tabEl);
+        }
+
+        if (branch.tabs.length > 5) {
+            const more = document.createElement('div');
+            more.className = 'branch-tab';
+            more.innerHTML = `<span class="branch-tab-prefix">└</span><span class="branch-tab-link">+${branch.tabs.length - 5} more</span>`;
+            tabList.appendChild(more);
+        }
+
+        content.appendChild(tabList);
+    }
+
+    wrapper.appendChild(content);
+    return wrapper;
+}
+
+function getAllProjectUrls(project) {
+    const urls = [];
+    if (project.branches) {
+        for (const b of project.branches) {
+            // Only take the first tab from each branch (domain)
+            // This prevents opening 50+ tabs if a branch has many subpages
+            if (b.tabs && b.tabs.length > 0 && b.tabs[0].url) {
+                urls.push(b.tabs[0].url);
+            }
+        }
+    }
+    return urls;
+}
+
+// ── Save current tabs modal ──────────────────────────────────
+
+function setupModal() {
+    const modal = document.getElementById('save-modal');
+    const input = document.getElementById('project-name-input');
+
+    document.getElementById('btn-save').addEventListener('click', () => {
+        modal.classList.remove('hidden');
+        input.value = '';
+        input.focus();
+    });
+
+    document.getElementById('modal-cancel').addEventListener('click', () => {
+        modal.classList.add('hidden');
+    });
+
+    document.getElementById('modal-save').addEventListener('click', async () => {
+        const name = input.value.trim();
+        if (!name) return;
+
+        // Get current tabs
+        const tabs = await chrome.tabs.query({ currentWindow: true });
+        const filteredTabs = tabs.filter(
+            (t) => t.url && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-extension://')
+        );
+
+        if (filteredTabs.length === 0) {
+            modal.classList.add('hidden');
+            return;
+        }
+
+        // Group by domain
+        const domainMap = {};
+        for (const tab of filteredTabs) {
+            let domain;
+            try {
+                domain = new URL(tab.url).hostname.replace(/^www\./, '');
+            } catch {
+                domain = 'other';
+            }
+            if (!domainMap[domain]) domainMap[domain] = [];
+            domainMap[domain].push({ url: tab.url, title: tab.title || '' });
+        }
+
+        const branches = Object.entries(domainMap).map(([domain, tabs]) => ({
+            id: generateId(),
+            domain,
+            tabs,
+        }));
+
+        const project = {
+            id: generateId(),
+            name,
+            autoDetected: false,
+            starred: false,
+            lastAccessed: Date.now(),
+            branches,
+            createdAt: Date.now(),
+        };
+
+        const existing = await getProjects();
+        existing.unshift(project);
+        await saveProjects(existing);
+
+        modal.classList.add('hidden');
+        await loadData();
+    });
+
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.classList.add('hidden');
+    });
+}
+
+function generateId() {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// DEBUG VIEW (carried over from Phase 1)
+// ══════════════════════════════════════════════════════════════
+
+function renderDomains(domains) {
+    const list = document.getElementById('domain-list');
+    const empty = document.getElementById('domains-empty');
+    list.innerHTML = '';
+    if (!domains.length) { empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    const maxCount = domains[0]?.count || 1;
     domains.forEach((d, i) => {
         const pct = Math.round((d.count / maxCount) * 100);
         const el = document.createElement('div');
@@ -71,7 +403,7 @@ function renderDomains(domains) {
         el.innerHTML = `
       <span class="domain-rank">${i + 1}</span>
       <div class="domain-bar-wrap">
-        <div class="domain-name" title="${escapeHtml(d.exampleTitle)}">${escapeHtml(d.domain)}</div>
+        <div class="domain-name" title="${esc(d.exampleTitle)}">${esc(d.domain)}</div>
         <div class="domain-bar" style="width: ${pct}%"></div>
       </div>
       <span class="domain-count">${d.count}</span>
@@ -84,20 +416,15 @@ function renderConnections(pairs) {
     const list = document.getElementById('connection-list');
     const empty = document.getElementById('connections-empty');
     list.innerHTML = '';
-
-    if (!pairs.length) {
-        empty.classList.remove('hidden');
-        return;
-    }
+    if (!pairs.length) { empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-
     pairs.forEach((p) => {
         const [a, b] = p.pair.split(' ↔ ');
         const el = document.createElement('div');
         el.className = 'connection-item';
         el.innerHTML = `
       <span class="connection-pair">
-        ${escapeHtml(a)}<span class="connection-arrow"> ↔ </span>${escapeHtml(b)}
+        ${esc(a)}<span class="connection-arrow"> ↔ </span>${esc(b)}
       </span>
       <span class="connection-strength">${p.strength}</span>
     `;
@@ -109,23 +436,14 @@ function renderSessions(sessions) {
     const list = document.getElementById('session-list');
     const empty = document.getElementById('sessions-empty');
     list.innerHTML = '';
-
-    if (!sessions.length) {
-        empty.classList.remove('hidden');
-        return;
-    }
+    if (!sessions.length) { empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-
     sessions.forEach((s) => {
         const el = document.createElement('div');
         el.className = 'session-item';
-
         const timeStr = formatTime(s.start);
         const durationStr = s.durationMin > 0 ? `${s.durationMin} min` : '< 1 min';
-        const domainTags = s.domains
-            .map((d) => `<span class="session-domain-tag">${escapeHtml(d)}</span>`)
-            .join('');
-
+        const domainTags = s.domains.map((d) => `<span class="session-domain-tag">${esc(d)}</span>`).join('');
         el.innerHTML = `
       <div class="session-header">
         <span class="session-time">${timeStr}</span>
@@ -141,29 +459,19 @@ function renderEventLog(events) {
     const list = document.getElementById('event-log');
     const empty = document.getElementById('log-empty');
     list.innerHTML = '';
-
-    if (!events.length) {
-        empty.classList.remove('hidden');
-        return;
-    }
+    if (!events.length) { empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-
     events.forEach((e) => {
         const el = document.createElement('div');
         el.className = 'event-item';
-
         const typeClass = `event-type--${e.type}`;
         const timeStr = formatTime(e.timestamp);
-
-        let detail = `<span class="event-domain">${escapeHtml(e.domain)}</span>`;
-        if (e.title) {
-            detail += `<span class="event-title">${escapeHtml(e.title)}</span>`;
-        }
+        let detail = `<span class="event-domain">${esc(e.domain)}</span>`;
+        if (e.title) detail += `<span class="event-title">${esc(e.title)}</span>`;
         if (e.focusDuration) {
             const sec = (e.focusDuration / 1000).toFixed(1);
             detail += `<span class="event-focus">${sec}s focused</span>`;
         }
-
         el.innerHTML = `
       <span class="event-type ${typeClass}">${e.type.replace('_', ' ')}</span>
       <div class="event-detail">${detail}</div>
@@ -175,27 +483,35 @@ function renderEventLog(events) {
 
 // ── Helpers ──────────────────────────────────────────────────
 
+function formatTimeAgo(timestamp) {
+    if (!timestamp) return '';
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+}
+
 function formatTime(ts) {
     const d = new Date(ts);
     const now = new Date();
-    const isToday =
-        d.getDate() === now.getDate() &&
-        d.getMonth() === now.getMonth() &&
-        d.getFullYear() === now.getFullYear();
-
+    const isToday = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
     if (isToday) return time;
     return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
 }
 
-function escapeHtml(str) {
+function truncate(str, maxLen = 40) {
     if (!str) return '';
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    return str.length <= maxLen ? str : str.slice(0, maxLen - 1) + '…';
+}
+
+function esc(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ── Bootstrap ────────────────────────────────────────────────

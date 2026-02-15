@@ -17,62 +17,65 @@
     <header class="popup-header">
       <h1 class="popup-title">Tabs</h1>
       <div class="header-actions">
-        <button class="btn-icon" id="btn-refresh" title="Refresh">↻</button>
-        <span class="status-badge" id="status-badge">Tracking</span>
+        <button class="btn-icon" id="btn-save" title="Save current tabs as project">+</button>
+        <button class="btn-icon" id="btn-refresh" title="Re-run clustering">↻</button>
       </div>
     </header>
 
-    <!-- Stats bar -->
-    <div class="stats-row" id="stats-row">
-      <div class="stat">
-        <span class="stat-value" id="stat-events">–</span>
-        <span class="stat-label">events</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value" id="stat-domains">–</span>
-        <span class="stat-label">domains</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value" id="stat-sessions">–</span>
-        <span class="stat-label">sessions</span>
+    <!-- View toggle -->
+    <nav class="view-toggle">
+      <button class="view-btn active" data-view="projects">Projects</button>
+      <button class="view-btn" data-view="debug">Debug</button>
+    </nav>
+
+    <!-- Projects view -->
+    <div class="view-panel active" id="view-projects">
+      <div class="project-list" id="project-list">
+        <div class="empty-state" id="projects-empty">
+          <p>No projects detected yet.</p>
+          <p class="empty-sub">Keep browsing — projects appear as patterns emerge.</p>
+        </div>
       </div>
     </div>
 
-    <!-- Tab navigation -->
-    <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="domains">Domains</button>
-      <button class="tab-btn" data-tab="connections">Connections</button>
-      <button class="tab-btn" data-tab="sessions">Sessions</button>
-      <button class="tab-btn" data-tab="log">Event Log</button>
-    </nav>
-
-    <!-- Tab panels -->
-    <div class="tab-panels">
-
-      <!-- Domains panel -->
-      <div class="tab-panel active" id="panel-domains">
-        <div class="panel-empty" id="domains-empty">No domains tracked yet.</div>
-        <div class="domain-list" id="domain-list"></div>
+    <!-- Debug view (carried over) -->
+    <div class="view-panel" id="view-debug">
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="domains">Domains</button>
+        <button class="tab-btn" data-tab="connections">Connections</button>
+        <button class="tab-btn" data-tab="sessions">Sessions</button>
+        <button class="tab-btn" data-tab="log">Event Log</button>
+      </nav>
+      <div class="tab-panels">
+        <div class="tab-panel active" id="panel-domains">
+          <div class="panel-empty" id="domains-empty">No domains tracked yet.</div>
+          <div class="domain-list" id="domain-list"></div>
+        </div>
+        <div class="tab-panel" id="panel-connections">
+          <div class="panel-empty" id="connections-empty">No connections detected yet.</div>
+          <div class="connection-list" id="connection-list"></div>
+        </div>
+        <div class="tab-panel" id="panel-sessions">
+          <div class="panel-empty" id="sessions-empty">No sessions recorded yet.</div>
+          <div class="session-list" id="session-list"></div>
+        </div>
+        <div class="tab-panel" id="panel-log">
+          <div class="panel-empty" id="log-empty">No events yet.</div>
+          <div class="event-log" id="event-log"></div>
+        </div>
       </div>
+    </div>
+  </div>
 
-      <!-- Connections panel -->
-      <div class="tab-panel" id="panel-connections">
-        <div class="panel-empty" id="connections-empty">No connections detected yet.</div>
-        <div class="connection-list" id="connection-list"></div>
+  <!-- Save project modal -->
+  <div class="modal-overlay hidden" id="save-modal">
+    <div class="modal">
+      <h2 class="modal-title">Save Current Tabs</h2>
+      <input type="text" class="modal-input" id="project-name-input" placeholder="Project name" />
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save">Save</button>
       </div>
-
-      <!-- Sessions panel -->
-      <div class="tab-panel" id="panel-sessions">
-        <div class="panel-empty" id="sessions-empty">No sessions recorded yet.</div>
-        <div class="session-list" id="session-list"></div>
-      </div>
-
-      <!-- Event Log panel -->
-      <div class="tab-panel" id="panel-log">
-        <div class="panel-empty" id="log-empty">No events yet.</div>
-        <div class="event-log" id="event-log"></div>
-      </div>
-
     </div>
   </div>
 
