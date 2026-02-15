@@ -1,0 +1,84 @@
+# UI/UX Design Rules
+
+## Typography
+- Primary Font: Tiempos Text Regular
+- Secondary Font: Tiempos Text Regular
+- Font Sizes. Keep all font sizes consistent. Example::
+  - h1: 2.5rem (40px)
+  - h2: 2rem (32px)
+  - h3: 1.5rem (24px)
+  - h4: 1.25rem (20px)
+  - p/body: 1rem (16px)
+  - small: 0.875rem (14px)
+- Line Height: 1.5 for body text, 1.2 for headings
+- Font Weight: 400 (normal), 600 (semibold), 700 (bold)
+
+## Color Scheme. Pick Claude's color scheme.
+- Primary: [YOUR_PRIMARY_COLOR]
+- Secondary: [YOUR_SECONDARY_COLOR]
+- Accent: [YOUR_ACCENT_COLOR]
+- Background: [YOUR_BG_COLOR]
+- Text Primary: [YOUR_TEXT_COLOR]
+- Text Secondary: [YOUR_TEXT_SECONDARY]
+- Border: [YOUR_BORDER_COLOR]
+- Error: [YOUR_ERROR_COLOR]
+- Success: [YOUR_SUCCESS_COLOR]
+
+## Spacing & Sizing. Keep this consistent. Examples:
+- Base Unit: 4px (use multiples of 4 for consistency)
+- Common Spacing: 8px, 12px, 16px, 24px, 32px, 48px
+- Container Max Width: 1280px
+- Card Padding: 24px
+- Button Padding: 12px 24px
+- Input Padding: 12px 16px
+- Border Radius:
+  - Small: 4px
+  - Medium: 8px
+  - Large: 12px
+  - Full: 9999px
+
+## Components
+
+### Buttons
+- Height: 40px (small), 48px (medium), 56px (large)
+- Font Size: 14px (small), 16px (medium), 18px (large)
+- Border Radius: 8px
+- No gradients
+- Clear hover states (opacity: 0.9 or background shift)
+
+### Cards
+- Padding: 24px
+- Border Radius: 12px
+- Background: solid color only
+- Border: 1px solid [BORDER_COLOR]
+- No gradients
+
+### Inputs
+- Height: 44px
+- Padding: 12px 16px
+- Border: 1px solid [BORDER_COLOR]
+- Border Radius: 8px
+- Focus state: border color change + subtle outline
+
+### Shadows (Minimal Use Only)
+- Small: 0 1px 3px rgba(0, 0, 0, 0.1)
+- Medium: 0 4px 6px rgba(0, 0, 0, 0.1)
+- Large: 0 10px 15px rgba(0, 0, 0, 0.1)
+- Use sparingly - prefer borders over shadows
+- Keep shadows consistent across similar components
+
+## Design Principles
+- NO GRADIENTS - use solid colors only
+- Keep it simple and clean
+- Maintain consistent spacing throughout
+- Use the provided color scheme - no random colors
+- Shadows should be minimal and consistent
+- All similar components should have identical sizing
+- Prefer subtle hover/active states
+- Maintain visual hierarchy through size and weight, not color chaos
+
+## General Guidelines
+- Ensure proper contrast ratios (WCAG AA minimum)
+- Use semantic HTML
+- Maintain consistent component patterns
+- Keep animations minimalistic, smooth, subtle and purposeful
