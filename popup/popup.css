@@ -282,7 +282,7 @@ body {
 
 .project-branches {
   display: none;
-  padding: 0 0 var(--space-md) var(--space-lg);
+  padding: 0 0 var(--space-md) 0;
 }
 
 .project-card.expanded .project-branches {
@@ -290,17 +290,17 @@ body {
 }
 
 .branch-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs) var(--space-base);
+  column-count: 2;
+  column-gap: var(--space-md);
 }
 
 .branch-item {
   display: flex;
   align-items: flex-start;
   gap: var(--space-xs);
-  min-width: 100px;
-  max-width: 160px;
+  break-inside: avoid;
+  margin-bottom: var(--space-sm);
+  overflow: hidden;
 }
 
 .branch-tree-line {
@@ -316,8 +316,8 @@ body {
   color: var(--color-text);
   cursor: pointer;
   transition: color 0.15s ease;
-  word-break: break-word;
   line-height: 1.4;
+  word-break: break-word;
 }
 
 .branch-name:hover {
@@ -331,7 +331,7 @@ body {
 
 .branch-tab {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-xs);
   font-size: 0.65rem;
   color: var(--color-text-secondary);
@@ -342,10 +342,8 @@ body {
   color: var(--color-text-secondary);
   text-decoration: none;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 120px;
+  word-break: break-word;
+  overflow-wrap: break-word;
   transition: color 0.15s ease;
 }
 
@@ -363,12 +361,16 @@ body {
 
 .project-actions {
   display: none;
-  padding: var(--space-sm) 0 var(--space-md) var(--space-lg);
+  padding: var(--space-sm) 0 var(--space-md) 0;
   gap: var(--space-sm);
 }
 
 .project-card.expanded .project-actions {
   display: flex;
+}
+
+.project-actions .btn {
+  flex: 1;
 }
 
 .btn {

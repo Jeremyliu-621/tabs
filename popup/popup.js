@@ -307,22 +307,31 @@ function createBranchElement(branch, isLast) {
     wrapper.appendChild(treeEl);
 
     const content = document.createElement('div');
+    content.className = 'branch-content';
     content.appendChild(nameEl);
 
-    // Show individual tabs under each branch
+    // Show individual tabs under each branch (deduplicated by title)
     if (branch.tabs && branch.tabs.length > 0) {
         const tabList = document.createElement('div');
         tabList.className = 'branch-tabs';
 
-        const displayTabs = branch.tabs.slice(0, 5); // cap display
+        // Deduplicate tabs by title, keeping only the first occurrence
+        const seenTitles = new Set();
+        const uniqueTabs = branch.tabs.filter((t) => {
+            if (seenTitles.has(t.title)) return false;
+            seenTitles.add(t.title);
+            return true;
+        });
+
+        const displayTabs = uniqueTabs.slice(0, 5); // cap display
         for (let i = 0; i < displayTabs.length; i++) {
             const tab = displayTabs[i];
-            const isTabLast = i === displayTabs.length - 1 && branch.tabs.length <= 5;
+            const isTabLast = i === displayTabs.length - 1 && uniqueTabs.length <= 5;
             const tabEl = document.createElement('div');
             tabEl.className = 'branch-tab';
             tabEl.innerHTML = `
         <span class="branch-tab-prefix">${isTabLast ? '└' : '├'}</span>
-        <a class="branch-tab-link" title="${esc(tab.title)}">${esc(truncate(tab.title, 25))}</a>
+        <a class="branch-tab-link" title="${esc(tab.title)}">${esc(tab.title)}</a>
       `;
             tabEl.querySelector('.branch-tab-link').addEventListener('click', () => {
                 chrome.runtime.sendMessage({ action: 'openTabs', urls: [tab.url] });
@@ -330,10 +339,10 @@ function createBranchElement(branch, isLast) {
             tabList.appendChild(tabEl);
         }
 
-        if (branch.tabs.length > 5) {
+        if (uniqueTabs.length > 5) {
             const more = document.createElement('div');
             more.className = 'branch-tab';
-            more.innerHTML = `<span class="branch-tab-prefix">└</span><span class="branch-tab-link">+${branch.tabs.length - 5} more</span>`;
+            more.innerHTML = `<span class="branch-tab-prefix">└</span><span class="branch-tab-link">+${uniqueTabs.length - 5} more</span>`;
             tabList.appendChild(more);
         }
 
