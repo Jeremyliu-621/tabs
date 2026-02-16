@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clustering Algorithm Tester</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="clustering-test.css" />
+</head>
+
+<body>
+  <div class="page-container">
+    <!-- Header -->
+    <header class="page-header">
+      <h1 class="page-title">🧪 Clustering Algorithm Tester</h1>
+      <p class="page-subtitle">Load realistic scenarios and see how the algorithm clusters them</p>
+    </header>
+
+    <!-- Scenario Selector -->
+    <section id="scenario-selector">
+      <h2 class="section-heading">Load a Scenario:</h2>
+      <div class="scenario-grid" id="scenario-grid">
+        <!-- Buttons injected by JS -->
+      </div>
+      <button class="btn-clear" id="btn-clear">🗑 Clear All Data</button>
+    </section>
+
+    <!-- Settings Panel -->
+    <section id="settings-section" class="settings-section">
+      <button class="settings-toggle" id="settings-toggle">
+        <span class="settings-toggle-icon" id="settings-toggle-icon">▶</span>
+        ⚙️ Algorithm Settings
+      </button>
+      <div class="settings-body hidden" id="settings-body">
+        <div class="settings-grid">
+          <label class="setting-field">
+            <span class="setting-name">Session gap</span>
+            <span class="setting-hint">Minutes of inactivity before a new session starts</span>
+            <input type="number" class="setting-input" id="setting-session-gap" min="1" max="120" step="1" />
+          </label>
+          <label class="setting-field">
+            <span class="setting-name">Data retention</span>
+            <span class="setting-hint">Days of event history to consider</span>
+            <input type="number" class="setting-input" id="setting-data-retention" min="1" max="90" step="1" />
+          </label>
+          <label class="setting-field">
+            <span class="setting-name">Archive after</span>
+            <span class="setting-hint">Days before inactive projects are archived</span>
+            <input type="number" class="setting-input" id="setting-archive-threshold" min="1" max="90" step="1" />
+          </label>
+          <label class="setting-field">
+            <span class="setting-name">Overlap threshold</span>
+            <span class="setting-hint">% domain overlap to merge sessions (Jaccard)</span>
+            <input type="number" class="setting-input" id="setting-overlap-threshold" min="10" max="100" step="5" />
+          </label>
+          <label class="setting-field">
+            <span class="setting-name">Min cluster size</span>
+            <span class="setting-hint">Minimum domains in a session to create a project</span>
+            <input type="number" class="setting-input" id="setting-min-cluster" min="1" max="10" step="1" />
+          </label>
+          <label class="setting-field">
+            <span class="setting-name">Max auto projects</span>
+            <span class="setting-hint">Maximum active auto-detected projects</span>
+            <input type="number" class="setting-input" id="setting-max-projects" min="1" max="50" step="1" />
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button class="btn-settings-save" id="btn-settings-save">💾 Save Settings</button>
+          <button class="btn-settings-reset" id="btn-settings-reset">↩ Reset to Defaults</button>
+        </div>
+        <div class="settings-status hidden" id="settings-status"></div>
+      </div>
+    </section>
+
+    <!-- Custom Scenario Builder -->
+    <section id="custom-builder" class="builder-section">
+      <button class="settings-toggle" id="builder-toggle">
+        <span class="settings-toggle-icon" id="builder-toggle-icon">▶</span>
+        🛠️ Custom Scenario Builder
+      </button>
+      <div class="builder-body hidden" id="builder-body">
+        <!-- Scenario metadata -->
+        <div class="builder-meta">
+          <label class="setting-field">
+            <span class="setting-name">Scenario name</span>
+            <input type="text" class="setting-input" id="builder-name" placeholder="e.g. My edge case" />
+          </label>
+          <label class="setting-field">
+            <span class="setting-name">Description</span>
+            <input type="text" class="setting-input" id="builder-desc" placeholder="What this scenario tests" />
+          </label>
+        </div>
+
+        <!-- Session list (populated by JS) -->
+        <div class="builder-sessions" id="builder-sessions">
+          <!-- Session groups injected by JS -->
+        </div>
+
+        <button class="builder-add-session" id="builder-add-session">+ Add Session</button>
+
+        <!-- Actions -->
+        <div class="builder-actions">
+          <button class="btn-builder-run" id="builder-run">▶ Load &amp; Run</button>
+          <button class="btn-builder-save" id="builder-save">💾 Save Scenario</button>
+          <button class="btn-builder-clear" id="builder-clear">🗑 Clear Builder</button>
+        </div>
+
+        <!-- Saved custom scenarios -->
+        <div class="builder-saved" id="builder-saved">
+          <h3 class="builder-saved-heading">Saved Custom Scenarios</h3>
+          <div class="builder-saved-list" id="builder-saved-list">
+            <!-- Saved scenario chips injected by JS -->
+          </div>
+        </div>
+
+        <div class="settings-status hidden" id="builder-status"></div>
+      </div>
+    </section>
+
+    <!-- Scenario Info (hidden by default) -->
+    <section id="scenario-info" class="scenario-info hidden">
+      <h2 class="scenario-name" id="scenario-name"></h2>
+      <p class="scenario-description" id="scenario-description"></p>
+      <div class="scenario-details">
+        <div class="detail-item">
+          <div class="detail-label">Simulates</div>
+          <div class="detail-value" id="detail-simulates"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Events</div>
+          <div class="detail-value" id="detail-events"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Time span</div>
+          <div class="detail-value" id="detail-timespan"></div>
+        </div>
+      </div>
+      <button class="btn-run" id="btn-run">▶ Run Clustering</button>
+    </section>
+
+    <!-- Loading State (hidden by default) -->
+    <section id="loading-state" class="loading-state hidden">
+      <div class="spinner"></div>
+      <p class="loading-text">Running clustering algorithm…</p>
+    </section>
+
+    <!-- Results (hidden by default) -->
+    <section id="results-section" class="hidden">
+      <h2 class="results-header">Detected Projects</h2>
+      <div id="results-list">
+        <!-- Project cards injected by JS -->
+      </div>
+
+      <!-- Stats Panel -->
+      <div class="stats-panel" id="stats-panel">
+        <div class="stat-item">
+          <div class="stat-value" id="stat-projects">0</div>
+          <div class="stat-label">Projects Detected</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-tabs">0</div>
+          <div class="stat-label">Total Tabs</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-shared">0</div>
+          <div class="stat-label">Shared Domains</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-archived">0</div>
+          <div class="stat-label">Archived</div>
+        </div>
+      </div>
+
+      <!-- Evaluation -->
+      <div class="evaluation-section">
+        <h3 class="evaluation-heading">Does this look good to you?</h3>
+        <p class="evaluation-subtext">Manually evaluate if the clustering makes sense</p>
+        <div class="evaluation-buttons">
+          <button class="eval-btn eval-good" id="eval-good">👍 Good Clustering</button>
+          <button class="eval-btn eval-bad" id="eval-bad">👎 Needs Work</button>
+          <button class="eval-btn eval-notes" id="eval-notes">📝 Add Notes</button>
+        </div>
+        <textarea class="notes-area hidden" id="notes-textarea"
+          placeholder="Optional: What's wrong or what could be better?"></textarea>
+      </div>
+    </section>
+  </div>
+
+  <script src="clustering-test.js" type="module"></script>
+</body>
+
+</html>
