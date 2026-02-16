@@ -760,3 +760,204 @@ body {
 .tab-panel::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-secondary);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   SETTINGS VIEW
+   ══════════════════════════════════════════════════════════════ */
+
+.settings-panel {
+  overflow-y: auto;
+  padding: var(--space-sm) var(--space-xs) var(--space-base) 0;
+}
+
+.settings-heading {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--space-md);
+}
+
+.settings-heading--blacklist {
+  margin-top: var(--space-lg);
+}
+
+.settings-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-md);
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.settings-hint {
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
+}
+
+.settings-input {
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s ease;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.settings-input:focus {
+  border-color: var(--color-accent);
+}
+
+.settings-save,
+.settings-reset {
+  margin-top: var(--space-xs);
+}
+
+.settings-reset {
+  margin-left: var(--space-sm);
+}
+
+/* ── Blacklist ─────────────────────────────────────────────── */
+
+.blacklist-add {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.blacklist-input {
+  flex: 1;
+}
+
+.blacklist-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.blacklist-empty {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: var(--space-md);
+}
+
+.blacklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.blacklist-domain {
+  font-size: 0.775rem;
+  color: var(--color-text);
+}
+
+.blacklist-remove {
+  border: none;
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0 var(--space-xs);
+  transition: color 0.15s ease;
+}
+
+.blacklist-remove:hover {
+  color: var(--color-error);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ARCHIVED PROJECTS
+   ══════════════════════════════════════════════════════════════ */
+
+.archived-section {
+  flex-shrink: 0;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-sm);
+}
+
+.archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: var(--space-xs) 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.archived-toggle:hover {
+  color: var(--color-text);
+}
+
+.archived-expand {
+  width: 14px;
+  font-size: 9px;
+  transition: transform 0.2s ease;
+}
+
+.archived-count {
+  font-size: 0.65rem;
+  padding: 1px var(--space-sm);
+  background: var(--color-border);
+  border-radius: 9999px;
+  color: var(--color-text-secondary);
+}
+
+.archived-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.project-card--archived {
+  opacity: 0.65;
+}
+
+.project-card--archived:hover {
+  opacity: 0.85;
+}
+
+/* ── Settings panel scrollbar ──────────────────────────────── */
+
+.settings-panel::-webkit-scrollbar,
+.archived-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.settings-panel::-webkit-scrollbar-track,
+.archived-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-panel::-webkit-scrollbar-thumb,
+.archived-list::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+
+.settings-panel::-webkit-scrollbar-thumb:hover,
+.archived-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}

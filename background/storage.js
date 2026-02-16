@@ -1,4 +1,4 @@
-import { STORAGE_KEYS, RETENTION } from '../shared/constants.js';
+import { STORAGE_KEYS, RETENTION, TRACKING, CLUSTERING } from '../shared/constants.js';
 
 /**
  * Thin wrapper around chrome.storage.local.
@@ -68,6 +68,65 @@ export async function getProjects() {
 
 export async function saveProjects(projects) {
     return set(STORAGE_KEYS.PROJECTS, projects);
+}
+
+/**
+ * Get only active (non-archived) projects.
+ */
+export async function getActiveProjects() {
+    const all = await getProjects();
+    return all.filter((p) => !p.archived);
+}
+
+/**
+ * Get only archived projects.
+ */
+export async function getArchivedProjects() {
+    const all = await getProjects();
+    return all.filter((p) => p.archived);
+}
+
+// ── Domain Blacklist ─────────────────────────────────────────
+
+/**
+ * Get the list of user-blacklisted domains.
+ */
+export async function getUserBlacklist() {
+    return (await get(STORAGE_KEYS.BLACKLIST)) || [];
+}
+
+/**
+ * Save the domain blacklist.
+ */
+export async function saveUserBlacklist(domains) {
+    return set(STORAGE_KEYS.BLACKLIST, domains);
+}
+
+// ── Clustering Settings (user-editable) ──────────────────────
+
+/**
+ * Get user-customized clustering settings, merged with defaults.
+ * Returns an object with keys: sessionGap, dataRetention,
+ * archiveThreshold, overlapThreshold, minClusterSize, maxAutoProjects.
+ */
+export async function getClusteringSettings() {
+    const saved = (await get(STORAGE_KEYS.CLUSTERING_SETTINGS)) || {};
+    return {
+        sessionGap: saved.sessionGap ?? TRACKING.SESSION_GAP,
+        dataRetention: saved.dataRetention ?? CLUSTERING.DATA_RETENTION,
+        archiveThreshold: saved.archiveThreshold ?? CLUSTERING.ARCHIVE_THRESHOLD,
+        overlapThreshold: saved.overlapThreshold ?? CLUSTERING.OVERLAP_THRESHOLD,
+        minClusterSize: saved.minClusterSize ?? CLUSTERING.MIN_CLUSTER_SIZE,
+        maxAutoProjects: saved.maxAutoProjects ?? CLUSTERING.MAX_AUTO_PROJECTS,
+    };
+}
+
+/**
+ * Save user-customized clustering settings (partial updates OK).
+ */
+export async function saveClusteringSettings(settings) {
+    const current = await getClusteringSettings();
+    return set(STORAGE_KEYS.CLUSTERING_SETTINGS, { ...current, ...settings });
 }
 
 // ── Stats (quick counts for the popup stub) ──────────────────
@@ -149,8 +208,8 @@ export async function getDebugAnalytics() {
             focusDuration: e.focusDuration || null,
         }));
 
-    // 4. Session detection (gaps > 30 min = new session)
-    const SESSION_GAP = 30 * 60 * 1000;
+    // 4. Session detection (gaps > SESSION_GAP = new session)
+    const SESSION_GAP = TRACKING.SESSION_GAP;
     const sessions = [];
     let currentSession = null;
     const sortedEvents = [...events].sort((a, b) => a.timestamp - b.timestamp);

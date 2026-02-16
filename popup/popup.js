@@ -1,13 +1,24 @@
 /**
- * Tabs Popup — Project Dashboard + Debug View
+ * Tabs Popup — Project Dashboard + Settings + Debug View
  *
  * Projects view: auto-detected project list with expandable branches,
- * one-click switching, starring, and manual project creation.
+ * one-click switching, starring, manual project creation, and archived section.
+ *
+ * Settings view: editable clustering parameters and domain blacklist.
  *
  * Debug view: domain frequencies, co-occurrence, sessions, event log.
  */
 
-import { getDebugAnalytics, getProjects, saveProjects } from '../background/storage.js';
+import {
+    getDebugAnalytics,
+    getProjects,
+    saveProjects,
+    getUserBlacklist,
+    saveUserBlacklist,
+    getClusteringSettings,
+    saveClusteringSettings,
+} from '../background/storage.js';
+import { TRACKING, CLUSTERING } from '../shared/constants.js';
 
 // ── Init ─────────────────────────────────────────────────────
 
@@ -15,6 +26,7 @@ async function init() {
     setupViewToggle();
     setupDebugTabs();
     setupModal();
+    setupSettings();
 
     document.getElementById('btn-refresh').addEventListener('click', async () => {
         // Trigger re-clustering in the background
@@ -46,7 +58,12 @@ async function loadData() {
             getProjects(),
         ]);
 
-        renderProjects(projects);
+        // Split active and archived
+        const active = projects.filter((p) => !p.archived);
+        const archived = projects.filter((p) => p.archived);
+
+        renderProjects(active);
+        renderArchivedProjects(archived);
         renderDomains(analytics.domainFrequency);
         renderConnections(analytics.coOccurrencePairs);
         renderSessions(analytics.sessions);
@@ -56,7 +73,7 @@ async function loadData() {
     }
 }
 
-// ── View toggle (Projects / Debug) ───────────────────────────
+// ── View toggle (Projects / Settings / Debug) ────────────────
 
 function setupViewToggle() {
     const buttons = document.querySelectorAll('.view-btn');
@@ -108,9 +125,9 @@ function renderProjects(projects) {
     }
 }
 
-function createProjectCard(project) {
+function createProjectCard(project, isArchived = false) {
     const card = document.createElement('div');
-    card.className = 'project-card';
+    card.className = `project-card${isArchived ? ' project-card--archived' : ''}`;
     card.dataset.projectId = project.id;
 
     // ── Header row
@@ -186,44 +203,76 @@ function createProjectCard(project) {
     const actions = document.createElement('div');
     actions.className = 'project-actions';
 
-    const switchBtn = document.createElement('button');
-    switchBtn.className = 'btn btn-primary';
-    switchBtn.textContent = 'Switch to project';
-    switchBtn.addEventListener('click', () => {
-        const allUrls = getAllProjectUrls(project);
-        if (allUrls.length > 0) {
-            chrome.runtime.sendMessage({ action: 'switchToProject', urls: allUrls });
-            window.close();
-        }
-    });
+    if (isArchived) {
+        // Archived projects get Restore and Delete buttons
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'btn btn-primary';
+        restoreBtn.textContent = 'Restore';
+        restoreBtn.addEventListener('click', async () => {
+            const allProjects = await getProjects();
+            const p = allProjects.find((x) => x.id === project.id);
+            if (p) {
+                p.archived = false;
+                p.lastAccessed = Date.now();
+                await saveProjects(allProjects);
+                loadData();
+            }
+        });
 
-    const openBtn = document.createElement('button');
-    openBtn.className = 'btn btn-secondary';
-    openBtn.textContent = 'Open project';
-    openBtn.addEventListener('click', () => {
-        const allUrls = getAllProjectUrls(project);
-        if (allUrls.length > 0) {
-            chrome.runtime.sendMessage({ action: 'openProjectWindow', urls: allUrls });
-        }
-    });
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', async () => {
+            const allProjects = await getProjects();
+            const filtered = allProjects.filter((p) => p.id !== project.id);
+            await saveProjects(filtered);
+            loadData();
+        });
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-danger';
-    deleteBtn.textContent = 'Delete';
-    deleteBtn.addEventListener('click', async () => {
-        const allProjects = await getProjects();
-        const filtered = allProjects.filter((p) => p.id !== project.id);
-        await saveProjects(filtered);
-        card.remove();
-        // Show empty state if no projects left
-        if (filtered.length === 0) {
-            document.getElementById('projects-empty').classList.remove('hidden');
-        }
-    });
+        actions.appendChild(restoreBtn);
+        actions.appendChild(deleteBtn);
+    } else {
+        // Active projects get Switch, Open, Delete buttons
+        const switchBtn = document.createElement('button');
+        switchBtn.className = 'btn btn-primary';
+        switchBtn.textContent = 'Switch to project';
+        switchBtn.addEventListener('click', () => {
+            const allUrls = getAllProjectUrls(project);
+            if (allUrls.length > 0) {
+                chrome.runtime.sendMessage({ action: 'switchToProject', urls: allUrls });
+                window.close();
+            }
+        });
 
-    actions.appendChild(switchBtn);
-    actions.appendChild(openBtn);
-    actions.appendChild(deleteBtn);
+        const openBtn = document.createElement('button');
+        openBtn.className = 'btn btn-secondary';
+        openBtn.textContent = 'Open project';
+        openBtn.addEventListener('click', () => {
+            const allUrls = getAllProjectUrls(project);
+            if (allUrls.length > 0) {
+                chrome.runtime.sendMessage({ action: 'openProjectWindow', urls: allUrls });
+            }
+        });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', async () => {
+            const allProjects = await getProjects();
+            const filtered = allProjects.filter((p) => p.id !== project.id);
+            await saveProjects(filtered);
+            card.remove();
+            // Show empty state if no projects left
+            const remaining = filtered.filter((p) => !p.archived);
+            if (remaining.length === 0) {
+                document.getElementById('projects-empty').classList.remove('hidden');
+            }
+        });
+
+        actions.appendChild(switchBtn);
+        actions.appendChild(openBtn);
+        actions.appendChild(deleteBtn);
+    }
 
     card.appendChild(header);
     card.appendChild(branchContainer);
@@ -307,6 +356,41 @@ function getAllProjectUrls(project) {
     return urls;
 }
 
+// ── Archived projects ────────────────────────────────────────
+
+function renderArchivedProjects(archived) {
+    const section = document.getElementById('archived-section');
+    const countEl = document.getElementById('archived-count');
+    const list = document.getElementById('archived-list');
+
+    if (!archived || archived.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = '';
+    countEl.textContent = archived.length;
+
+    // Clear and re-render
+    list.innerHTML = '';
+    for (const project of archived) {
+        const card = createProjectCard(project, true);
+        list.appendChild(card);
+    }
+
+    // Toggle expand/collapse
+    const toggle = document.getElementById('archived-toggle');
+    // Remove old listeners by cloning
+    const newToggle = toggle.cloneNode(true);
+    toggle.parentNode.replaceChild(newToggle, toggle);
+
+    newToggle.addEventListener('click', () => {
+        const isOpen = list.style.display !== 'none';
+        list.style.display = isOpen ? 'none' : '';
+        newToggle.querySelector('.archived-expand').textContent = isOpen ? '▶' : '▼';
+    });
+}
+
 // ── Save current tabs modal ──────────────────────────────────
 
 function setupModal() {
@@ -362,6 +446,7 @@ function setupModal() {
             name,
             autoDetected: false,
             starred: false,
+            archived: false,
             lastAccessed: Date.now(),
             branches,
             createdAt: Date.now(),
@@ -383,6 +468,150 @@ function setupModal() {
 
 function generateId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════════════════════
+
+async function setupSettings() {
+    await loadSettings();
+    await loadBlacklist();
+
+    document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+    document.getElementById('btn-reset-settings').addEventListener('click', resetSettings);
+
+    // Blacklist add
+    const addBtn = document.getElementById('btn-add-blacklist');
+    const blacklistInput = document.getElementById('blacklist-input');
+
+    addBtn.addEventListener('click', () => addBlacklistDomain());
+    blacklistInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addBlacklistDomain();
+    });
+}
+
+async function loadSettings() {
+    const settings = await getClusteringSettings();
+
+    document.getElementById('setting-session-gap').value = Math.round(settings.sessionGap / 60000);
+    document.getElementById('setting-data-retention').value = Math.round(settings.dataRetention / (24 * 60 * 60 * 1000));
+    document.getElementById('setting-archive-threshold').value = Math.round(settings.archiveThreshold / (24 * 60 * 60 * 1000));
+    document.getElementById('setting-overlap-threshold').value = Math.round(settings.overlapThreshold * 100);
+    document.getElementById('setting-max-projects').value = settings.maxAutoProjects;
+}
+
+async function saveSettings() {
+    const sessionGapMin = parseInt(document.getElementById('setting-session-gap').value, 10);
+    const dataRetentionDays = parseInt(document.getElementById('setting-data-retention').value, 10);
+    const archiveDays = parseInt(document.getElementById('setting-archive-threshold').value, 10);
+    const overlapPct = parseInt(document.getElementById('setting-overlap-threshold').value, 10);
+    const maxProjects = parseInt(document.getElementById('setting-max-projects').value, 10);
+
+    if (isNaN(sessionGapMin) || isNaN(dataRetentionDays) || isNaN(archiveDays) ||
+        isNaN(overlapPct) || isNaN(maxProjects)) {
+        return;
+    }
+
+    await saveClusteringSettings({
+        sessionGap: sessionGapMin * 60 * 1000,
+        dataRetention: dataRetentionDays * 24 * 60 * 60 * 1000,
+        archiveThreshold: archiveDays * 24 * 60 * 60 * 1000,
+        overlapThreshold: overlapPct / 100,
+        maxAutoProjects: maxProjects,
+    });
+
+    // Re-run clustering with new settings
+    chrome.runtime.sendMessage({ action: 'runClustering' }, () => {
+        loadData();
+    });
+
+    // Brief feedback
+    const btn = document.getElementById('btn-save-settings');
+    const original = btn.textContent;
+    btn.textContent = 'Saved ✓';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+}
+
+async function resetSettings() {
+    await saveClusteringSettings({
+        sessionGap: TRACKING.SESSION_GAP,
+        dataRetention: CLUSTERING.DATA_RETENTION,
+        archiveThreshold: CLUSTERING.ARCHIVE_THRESHOLD,
+        overlapThreshold: CLUSTERING.OVERLAP_THRESHOLD,
+        maxAutoProjects: CLUSTERING.MAX_AUTO_PROJECTS,
+    });
+
+    await loadSettings();
+
+    // Re-run clustering with defaults
+    chrome.runtime.sendMessage({ action: 'runClustering' }, () => {
+        loadData();
+    });
+
+    const btn = document.getElementById('btn-reset-settings');
+    const original = btn.textContent;
+    btn.textContent = 'Reset ✓';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+}
+
+// ── Blacklist ────────────────────────────────────────────────
+
+async function loadBlacklist() {
+    const blacklist = await getUserBlacklist();
+    renderBlacklist(blacklist);
+}
+
+function renderBlacklist(blacklist) {
+    const list = document.getElementById('blacklist-list');
+    list.innerHTML = '';
+
+    if (blacklist.length === 0) {
+        list.innerHTML = '<div class="blacklist-empty">No domains blacklisted.</div>';
+        return;
+    }
+
+    for (const domain of blacklist) {
+        const item = document.createElement('div');
+        item.className = 'blacklist-item';
+        item.innerHTML = `
+            <span class="blacklist-domain">${esc(domain)}</span>
+            <button class="blacklist-remove" title="Remove from blacklist">✕</button>
+        `;
+        item.querySelector('.blacklist-remove').addEventListener('click', async () => {
+            const current = await getUserBlacklist();
+            const updated = current.filter((d) => d !== domain);
+            await saveUserBlacklist(updated);
+            renderBlacklist(updated);
+            // Re-run clustering to update projects
+            chrome.runtime.sendMessage({ action: 'runClustering' }, () => {
+                loadData();
+            });
+        });
+        list.appendChild(item);
+    }
+}
+
+async function addBlacklistDomain() {
+    const input = document.getElementById('blacklist-input');
+    const domain = input.value.trim().toLowerCase().replace(/^www\./, '');
+    if (!domain) return;
+
+    const current = await getUserBlacklist();
+    if (current.includes(domain)) {
+        input.value = '';
+        return;
+    }
+
+    current.push(domain);
+    await saveUserBlacklist(current);
+    renderBlacklist(current);
+    input.value = '';
+
+    // Re-run clustering to apply
+    chrome.runtime.sendMessage({ action: 'runClustering' }, () => {
+        loadData();
+    });
 }
 
 // ══════════════════════════════════════════════════════════════

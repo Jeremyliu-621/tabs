@@ -1,36 +1,29 @@
-import { TRACKING } from '../shared/constants.js';
 import { generateId } from '../shared/utils.js';
-import { getTabEvents, getProjects, saveProjects } from './storage.js';
+import {
+    getTabEvents,
+    getProjects,
+    saveProjects,
+    getUserBlacklist,
+    getClusteringSettings,
+} from './storage.js';
 
 /**
- * Clustering engine for automatic project detection.
+ * Session-based clustering engine for automatic project detection.
  *
  * Algorithm overview:
- * 1. Split raw events into browsing sessions (30-min gap)
- * 2. Within each session, group events by domain → "branches"
- * 3. Build a co-occurrence matrix: how often domains appear in the same session
- * 4. Cluster high-affinity domains into projects using greedy agglomeration
- * 5. Promote high-activity standalone domains as their own projects
- * 6. Enforce non-overlap: each domain belongs to exactly one project
- * 7. Merge new clusters with existing projects (don't destroy user edits)
+ * 1. Filter events to the recent data-retention window (default 7 days)
+ * 2. Split events into sessions based on inactivity gap (default 15 min)
+ * 3. Each multi-domain session becomes a project candidate
+ * 4. Deduplicate candidates against existing projects (≥80% Jaccard overlap → merge)
+ * 5. Mark stale projects as archived (not accessed within archive threshold)
+ * 6. Apply user's domain blacklist
+ * 7. Preserve user-created projects, starred status, and custom names
+ * 8. Sort, cap, and save
+ *
+ * Key difference from previous approach:
+ * - Domains CAN appear in multiple projects (no enforceNonOverlap)
+ * - Sessions are the atomic unit, not a global co-occurrence matrix
  */
-
-// ── Tuning constants ─────────────────────────────────────────
-
-/** Minimum raw events before we attempt clustering at all */
-const MIN_EVENTS = 3;
-
-/** Minimum co-occurrence score to merge two clusters */
-const MIN_AFFINITY = 1;
-
-/** Minimum sessions a domain must appear in to be considered */
-const MIN_DOMAIN_SESSIONS = 1;
-
-/** Standalone domains with this many events become their own project */
-const STANDALONE_MIN_EVENTS = 4;
-
-/** Maximum number of auto-detected projects to keep (prevents clutter) */
-const MAX_AUTO_PROJECTS = 10;
 
 // ── Main entry point ─────────────────────────────────────────
 
@@ -39,56 +32,74 @@ const MAX_AUTO_PROJECTS = 10;
  * Preserves manually-created or user-edited projects.
  */
 export async function runClustering() {
-    const events = await getTabEvents();
-    if (events.length < MIN_EVENTS) return;
+    const settings = await getClusteringSettings();
 
-    const existingProjects = await getProjects();
+    // Step 1: Get recent events only
+    const allEvents = await getTabEvents();
+    const recentEvents = filterRecentEvents(allEvents, settings.dataRetention);
+    if (recentEvents.length < 3) return;
 
-    // Step 1: Build sessions
-    const sessions = buildSessions(events);
+    // Step 2: Build sessions
+    const sessions = buildSessions(recentEvents, settings.sessionGap);
     if (sessions.length === 0) return;
 
-    // Step 2: Build domain stats
-    const domainStats = buildDomainStats(events, sessions);
+    // Step 3: Create project candidates from multi-domain sessions
+    const candidates = sessions
+        .filter((s) => s.domains.size >= settings.minClusterSize)
+        .map((s) => sessionToProject(s));
 
-    // Step 3: Build co-occurrence matrix
-    const coMatrix = buildCoOccurrenceMatrix(sessions);
+    // Step 4: Load existing projects and separate manual from auto-detected
+    const existingProjects = await getProjects();
+    const manualProjects = existingProjects.filter((p) => !p.autoDetected);
+    const prevAutoDetected = existingProjects.filter((p) => p.autoDetected);
 
-    // Step 4: Cluster domains into groups
-    const clusters = clusterDomains(coMatrix, sessions, domainStats);
-
-    // Step 5: Enforce non-overlap — each domain in exactly one cluster
-    const cleanClusters = enforceNonOverlap(clusters, domainStats);
-
-    // Step 6: Promote active standalone domains not yet in any cluster
-    const allClustered = new Set(cleanClusters.flat());
-    const standalones = findStandaloneDomains(domainStats, allClustered);
-    const allClusters = [...cleanClusters, ...standalones];
-
-    if (allClusters.length === 0) return;
-
-    // Step 7: Convert clusters to project objects
-    const detectedProjects = allClusters.map((cluster) =>
-        clusterToProject(cluster, sessions, events)
+    // Step 5: Deduplicate candidates against existing auto-detected projects
+    const deduplicated = deduplicateProjects(
+        prevAutoDetected,
+        candidates,
+        settings.overlapThreshold
     );
 
-    // Step 8: Cap at MAX_AUTO_PROJECTS
-    const capped = detectedProjects
-        .sort((a, b) => b.lastAccessed - a.lastAccessed)
-        .slice(0, MAX_AUTO_PROJECTS);
+    // Step 6: Mark archived projects
+    const withArchiveStatus = markArchivedProjects(
+        deduplicated,
+        settings.archiveThreshold
+    );
 
-    // Step 9: Merge with existing projects
-    const merged = mergeProjects(existingProjects, capped);
+    // Step 7: Apply domain blacklist
+    const blacklist = await getUserBlacklist();
+    const filtered = applyBlacklist(withArchiveStatus, blacklist);
 
-    await saveProjects(merged);
-    console.log(`[Tabs] Clustering complete: ${merged.length} projects (${capped.length} auto-detected)`);
+    // Step 8: Restore user customizations (starred, renamed)
+    const restored = restoreUserCustomizations(filtered, prevAutoDetected);
 
-    return merged;
+    // Step 9: Sort and cap
+    const sorted = sortProjects(restored);
+    const activeCount = sorted.filter((p) => !p.archived).length;
+    const capped = capActiveProjects(sorted, settings.maxAutoProjects);
+
+    // Step 10: Combine with manual projects and save
+    const final = [...manualProjects, ...capped.map(cleanForStorage)];
+    await saveProjects(final);
+
+    console.log(
+        `[Tabs] Clustering complete: ${final.length} projects ` +
+        `(${Math.min(activeCount, settings.maxAutoProjects)} active auto-detected)`
+    );
+
+    return final;
 }
 
-// ── Step 1: Session detection ────────────────────────────────
+// ── Step 1: Filter recent events ─────────────────────────────
 
-function buildSessions(events) {
+function filterRecentEvents(events, retentionMs) {
+    const cutoff = Date.now() - retentionMs;
+    return events.filter((e) => e.timestamp >= cutoff);
+}
+
+// ── Step 2: Session detection ────────────────────────────────
+
+function buildSessions(events, sessionGap) {
     const sorted = [...events]
         .filter((e) => e.domain && e.timestamp)
         .sort((a, b) => a.timestamp - b.timestamp);
@@ -105,7 +116,7 @@ function buildSessions(events) {
 
     for (let i = 1; i < sorted.length; i++) {
         const e = sorted[i];
-        if (e.timestamp - current.end > TRACKING.SESSION_GAP) {
+        if (e.timestamp - current.end > sessionGap) {
             sessions.push(current);
             current = {
                 start: e.timestamp,
@@ -124,262 +135,279 @@ function buildSessions(events) {
     return sessions;
 }
 
-// ── Step 2: Domain stats ─────────────────────────────────────
+// ── Step 3: Convert session → project candidate ──────────────
 
-function buildDomainStats(events, sessions) {
-    const stats = {};
-
-    for (const e of events) {
-        if (!e.domain) continue;
-        if (!stats[e.domain]) {
-            stats[e.domain] = { eventCount: 0, sessionCount: 0, lastSeen: 0 };
-        }
-        stats[e.domain].eventCount++;
-        if (e.timestamp > stats[e.domain].lastSeen) {
-            stats[e.domain].lastSeen = e.timestamp;
-        }
-    }
-
-    for (const session of sessions) {
-        for (const d of session.domains) {
-            if (stats[d]) stats[d].sessionCount++;
-        }
-    }
-
-    return stats;
-}
-
-// ── Step 3: Co-occurrence matrix ─────────────────────────────
-
-function buildCoOccurrenceMatrix(sessions) {
-    const matrix = new Map();
-
-    for (const session of sessions) {
-        const domains = [...session.domains];
-        for (let i = 0; i < domains.length; i++) {
-            for (let j = i + 1; j < domains.length; j++) {
-                const key = pairKey(domains[i], domains[j]);
-                matrix.set(key, (matrix.get(key) || 0) + 1);
-            }
-        }
-    }
-
-    return matrix;
-}
-
-// ── Step 4: Greedy agglomerative clustering ──────────────────
-
-function clusterDomains(coMatrix, sessions, domainStats) {
-    // Only consider domains meeting the minimum session threshold
-    const activeDomains = Object.keys(domainStats).filter(
-        (d) => domainStats[d].sessionCount >= MIN_DOMAIN_SESSIONS
-    );
-
-    if (activeDomains.length < 2) return [];
-
-    // Initialize: each domain = one cluster
-    let clusters = activeDomains.map((d) => new Set([d]));
-
-    // Greedy merge loop
-    const MAX_ITERATIONS = 50;
-    for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-        let bestScore = 0;
-        let bestI = -1;
-        let bestJ = -1;
-
-        for (let i = 0; i < clusters.length; i++) {
-            for (let j = i + 1; j < clusters.length; j++) {
-                const score = clusterAffinity(clusters[i], clusters[j], coMatrix);
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestI = i;
-                    bestJ = j;
-                }
-            }
-        }
-
-        if (bestScore < MIN_AFFINITY) break;
-
-        // Don't let clusters grow too large (keeps projects focused)
-        if (clusters[bestI].size + clusters[bestJ].size > 8) break;
-
-        // Merge bestJ into bestI
-        for (const d of clusters[bestJ]) {
-            clusters[bestI].add(d);
-        }
-        clusters.splice(bestJ, 1);
-    }
-
-    // Keep clusters with 2+ domains
-    return clusters.filter((c) => c.size >= 2).map((c) => [...c]);
-}
-
-function clusterAffinity(clusterA, clusterB, coMatrix) {
-    let totalScore = 0;
-    let pairCount = 0;
-
-    for (const a of clusterA) {
-        for (const b of clusterB) {
-            totalScore += coMatrix.get(pairKey(a, b)) || 0;
-            pairCount++;
-        }
-    }
-
-    return pairCount > 0 ? totalScore / pairCount : 0;
-}
-
-// ── Step 5: Non-overlap enforcement ──────────────────────────
-
-/**
- * If a domain ended up in multiple clusters (shouldn't happen with
- * agglomerative, but safety net), assign it to the cluster where
- * it has the strongest affinity.
- */
-function enforceNonOverlap(clusters, domainStats) {
-    const domainAssignment = new Map(); // domain → cluster index
-
-    for (let i = 0; i < clusters.length; i++) {
-        for (const domain of clusters[i]) {
-            if (!domainAssignment.has(domain)) {
-                domainAssignment.set(domain, i);
-            } else {
-                // Already assigned — keep in the cluster with more activity
-                const existingIdx = domainAssignment.get(domain);
-                const existingSize = clusters[existingIdx].length;
-                const currentSize = clusters[i].length;
-                // Prefer the larger cluster
-                if (currentSize > existingSize) {
-                    // Remove from old cluster
-                    clusters[existingIdx] = clusters[existingIdx].filter((d) => d !== domain);
-                    domainAssignment.set(domain, i);
-                } else {
-                    // Remove from current cluster
-                    clusters[i] = clusters[i].filter((d) => d !== domain);
-                }
-            }
-        }
-    }
-
-    // Filter out any clusters that became empty or single-domain after cleanup
-    return clusters.filter((c) => c.length >= 2);
-}
-
-// ── Step 6: Standalone domain promotion ──────────────────────
-
-/**
- * Domains with significant activity that aren't part of any cluster
- * get promoted to their own single-domain project.
- */
-function findStandaloneDomains(domainStats, clusteredDomains) {
-    const standalones = [];
-
-    for (const [domain, stats] of Object.entries(domainStats)) {
-        if (clusteredDomains.has(domain)) continue;
-        if (stats.eventCount >= STANDALONE_MIN_EVENTS) {
-            standalones.push([domain]);
-        }
-    }
-
-    return standalones;
-}
-
-// ── Step 7: Convert cluster → project ────────────────────────
-
-function clusterToProject(clusterDomains, sessions, events) {
-    let lastAccessed = 0;
+function sessionToProject(session) {
+    const domains = [...session.domains];
     const domainUrls = {};
 
-    for (const e of events) {
-        if (!clusterDomains.includes(e.domain)) continue;
-        if (e.timestamp > lastAccessed) lastAccessed = e.timestamp;
-
-        if (e.url && e.title) {
-            if (!domainUrls[e.domain]) domainUrls[e.domain] = [];
-            const existing = domainUrls[e.domain].find((x) => x.url === e.url);
-            if (!existing) {
-                domainUrls[e.domain].push({ url: e.url, title: e.title });
-            } else {
-                existing.title = e.title;
-            }
+    // Collect unique URLs per domain from the session
+    for (const e of session.events) {
+        if (!e.url || !e.title || !e.domain) continue;
+        if (!domainUrls[e.domain]) domainUrls[e.domain] = [];
+        const existing = domainUrls[e.domain].find((x) => x.url === e.url);
+        if (!existing) {
+            domainUrls[e.domain].push({ url: e.url, title: e.title });
+        } else {
+            // Update title to the latest one
+            existing.title = e.title;
         }
     }
 
     // Build branches (one per domain)
-    const branches = clusterDomains.map((domain) => {
+    const branches = domains.map((domain) => {
         const urls = (domainUrls[domain] || []).slice(0, 10);
         return {
             id: generateId(),
             domain,
-            tabs: urls.map((u) => ({
-                url: u.url,
-                title: u.title,
-            })),
+            tabs: urls.map((u) => ({ url: u.url, title: u.title })),
         };
     });
 
+    // Sort branches by number of tabs (most active domain first)
     branches.sort((a, b) => b.tabs.length - a.tabs.length);
 
-    const primaryDomain = branches[0]?.domain || clusterDomains[0];
+    const primaryDomain = branches[0]?.domain || domains[0];
 
     return {
         id: generateId(),
         name: primaryDomain,
         autoDetected: true,
         starred: false,
-        lastAccessed,
+        archived: false,
+        lastAccessed: session.end,
+        createdAt: session.start,
         branches,
-        createdAt: Date.now(),
+        // Keep domain set for overlap calculation (stripped before saving)
+        _domains: new Set(domains),
     };
 }
 
-// ── Step 8: Merge with existing ──────────────────────────────
+// ── Step 5: Deduplicate projects ─────────────────────────────
 
-function mergeProjects(existing, detected) {
-    const manual = existing.filter((p) => !p.autoDetected);
+/**
+ * Merge new session candidates into existing projects when domain
+ * overlap exceeds the threshold. Domains CAN appear in multiple projects.
+ */
+function deduplicateProjects(existing, newCandidates, overlapThreshold) {
+    // Deep clone existing to avoid mutating the originals
+    const result = existing.map((p) => ({
+        ...p,
+        branches: (p.branches || []).map((b) => ({
+            ...b,
+            tabs: [...(b.tabs || [])],
+        })),
+        _domains: new Set(
+            p.branches ? p.branches.map((b) => b.domain) : []
+        ),
+    }));
 
-    // Preserve starred status and custom names from previous auto-detected projects
-    const prevAutoDetected = existing.filter((p) => p.autoDetected);
-    const starredNames = new Set(
-        prevAutoDetected.filter((p) => p.starred).map((p) => p.name)
-    );
-    const renamedMap = new Map();
-    for (const p of prevAutoDetected) {
-        // If user renamed a project (name differs from primary domain), preserve it
-        if (p.branches && p.branches.length > 0) {
-            const primaryDomain = p.branches[0]?.domain;
-            if (primaryDomain && p.name !== primaryDomain) {
-                renamedMap.set(primaryDomain, p.name);
+    for (const candidate of newCandidates) {
+        let merged = false;
+
+        for (const existingProj of result) {
+            const overlap = calculateJaccardSimilarity(
+                candidate._domains,
+                existingProj._domains
+            );
+
+            if (overlap >= overlapThreshold) {
+                // Merge: add new tabs/branches, update timestamps
+                mergeBranches(existingProj, candidate);
+
+                existingProj.lastAccessed = Math.max(
+                    existingProj.lastAccessed || 0,
+                    candidate.lastAccessed
+                );
+
+                // Expand the domain set
+                for (const d of candidate._domains) {
+                    existingProj._domains.add(d);
+                }
+
+                merged = true;
+                break;
             }
+        }
+
+        if (!merged) {
+            result.push(candidate);
         }
     }
 
-    for (const dp of detected) {
-        // Restore starred status
-        if (starredNames.has(dp.name)) {
-            dp.starred = true;
-        }
-        // Restore custom name
-        if (dp.branches && dp.branches.length > 0) {
-            const primaryDomain = dp.branches[0]?.domain;
-            if (primaryDomain && renamedMap.has(primaryDomain)) {
-                dp.name = renamedMap.get(primaryDomain);
-                if (starredNames.has(dp.name)) dp.starred = true;
-            }
-        }
-    }
-
-    // Sort: starred first, then by lastAccessed desc
-    const sortedAuto = [...detected].sort((a, b) => {
-        if (a.starred && !b.starred) return -1;
-        if (!a.starred && b.starred) return 1;
-        return b.lastAccessed - a.lastAccessed;
-    });
-
-    return [...manual, ...sortedAuto];
+    return result;
 }
 
-// ── Helpers ──────────────────────────────────────────────────
+/**
+ * Merge branches from a candidate into an existing project.
+ * For matching domains, add new tabs (deduped by URL).
+ * For new domains, add the entire branch.
+ */
+function mergeBranches(target, source) {
+    for (const newBranch of source.branches) {
+        const existingBranch = target.branches.find(
+            (b) => b.domain === newBranch.domain
+        );
 
-function pairKey(a, b) {
-    return a < b ? `${a}|${b}` : `${b}|${a}`;
+        if (existingBranch) {
+            // Add new tabs, deduped by URL
+            for (const tab of newBranch.tabs) {
+                if (!existingBranch.tabs.some((t) => t.url === tab.url)) {
+                    existingBranch.tabs.push(tab);
+                }
+            }
+            // Cap tabs per branch to prevent unbounded growth
+            if (existingBranch.tabs.length > 15) {
+                existingBranch.tabs = existingBranch.tabs.slice(-15);
+            }
+        } else {
+            target.branches.push(newBranch);
+        }
+    }
+}
+
+/**
+ * Jaccard similarity: |A ∩ B| / |A ∪ B|
+ */
+function calculateJaccardSimilarity(setA, setB) {
+    if (setA.size === 0 && setB.size === 0) return 1;
+
+    let intersectionSize = 0;
+    for (const item of setA) {
+        if (setB.has(item)) intersectionSize++;
+    }
+
+    const unionSize = setA.size + setB.size - intersectionSize;
+    return unionSize === 0 ? 0 : intersectionSize / unionSize;
+}
+
+// ── Step 6: Archive old projects ─────────────────────────────
+
+function markArchivedProjects(projects, archiveThreshold) {
+    const now = Date.now();
+
+    return projects.map((p) => ({
+        ...p,
+        archived: now - (p.lastAccessed || 0) > archiveThreshold,
+    }));
+}
+
+// ── Step 7: Apply domain blacklist ───────────────────────────
+
+function applyBlacklist(projects, blacklist) {
+    if (!blacklist || blacklist.length === 0) return projects;
+
+    return projects.map((p) => {
+        const filteredBranches = p.branches.filter(
+            (b) => !blacklist.includes(b.domain)
+        );
+
+        if (filteredBranches.length === 0) {
+            // All branches removed → archive the project
+            return { ...p, branches: filteredBranches, archived: true };
+        }
+
+        return { ...p, branches: filteredBranches };
+    });
+}
+
+// ── Step 8: Restore user customizations ──────────────────────
+
+/**
+ * Carry over starred status and custom names from previous
+ * auto-detected projects to the newly generated ones.
+ */
+function restoreUserCustomizations(newProjects, prevAutoDetected) {
+    // Build lookup maps from previous auto-detected projects
+    const starredDomainSets = [];
+    const renamedMap = new Map(); // primary domain → custom name
+
+    for (const p of prevAutoDetected) {
+        const primaryDomain = p.branches?.[0]?.domain;
+
+        if (p.starred) {
+            starredDomainSets.push({
+                domains: new Set(p.branches.map((b) => b.domain)),
+                name: p.name,
+            });
+        }
+
+        if (primaryDomain && p.name !== primaryDomain) {
+            renamedMap.set(primaryDomain, p.name);
+        }
+    }
+
+    return newProjects.map((proj) => {
+        const projDomains = proj._domains || new Set(proj.branches.map((b) => b.domain));
+        const primaryDomain = proj.branches?.[0]?.domain;
+
+        // Check if this project matches a previously starred one
+        for (const starred of starredDomainSets) {
+            const overlap = calculateJaccardSimilarity(projDomains, starred.domains);
+            if (overlap >= 0.8) {
+                proj.starred = true;
+                // Also restore the name if it was customized
+                if (starred.name !== starred.domains.values().next().value) {
+                    proj.name = starred.name;
+                }
+                break;
+            }
+        }
+
+        // Restore custom name by primary domain
+        if (primaryDomain && renamedMap.has(primaryDomain) && !proj.starred) {
+            proj.name = renamedMap.get(primaryDomain);
+        }
+
+        return proj;
+    });
+}
+
+// ── Step 9: Sort and cap ─────────────────────────────────────
+
+function sortProjects(projects) {
+    return [...projects].sort((a, b) => {
+        // Starred first
+        if (a.starred && !b.starred) return -1;
+        if (!a.starred && b.starred) return 1;
+        // Active before archived
+        if (a.archived !== b.archived) return a.archived ? 1 : -1;
+        // Then by lastAccessed descending
+        return (b.lastAccessed || 0) - (a.lastAccessed || 0);
+    });
+}
+
+/**
+ * Cap the number of active auto-detected projects.
+ * Archived projects are always kept (they're hidden in the UI).
+ */
+function capActiveProjects(projects, maxActive) {
+    const result = [];
+    let activeCount = 0;
+
+    for (const p of projects) {
+        if (!p.archived) {
+            if (activeCount < maxActive) {
+                result.push(p);
+                activeCount++;
+            }
+            // Skip excess active projects entirely
+        } else {
+            result.push(p);
+        }
+    }
+
+    return result;
+}
+
+// ── Clean project for storage ────────────────────────────────
+
+/**
+ * Strip internal fields (like _domains Set) before saving.
+ * Called implicitly via saveProjects since Sets don't serialize.
+ * But we explicitly clean to be safe.
+ */
+function cleanForStorage(project) {
+    const { _domains, ...clean } = project;
+    return clean;
 }

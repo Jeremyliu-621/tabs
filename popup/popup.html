@@ -25,6 +25,7 @@
     <!-- View toggle -->
     <nav class="view-toggle">
       <button class="view-btn active" data-view="projects">Projects</button>
+      <button class="view-btn" data-view="settings">Settings</button>
       <button class="view-btn" data-view="debug">Debug</button>
     </nav>
 
@@ -35,6 +36,66 @@
           <p>No projects detected yet.</p>
           <p class="empty-sub">Keep browsing — projects appear as patterns emerge.</p>
         </div>
+      </div>
+
+      <!-- Archived projects section -->
+      <div class="archived-section" id="archived-section" style="display: none;">
+        <button class="archived-toggle" id="archived-toggle">
+          <span class="archived-expand">▶</span>
+          Archived <span class="archived-count" id="archived-count">0</span>
+        </button>
+        <div class="archived-list" id="archived-list" style="display: none;"></div>
+      </div>
+    </div>
+
+    <!-- Settings view -->
+    <div class="view-panel" id="view-settings">
+      <div class="settings-panel">
+        <h3 class="settings-heading">Clustering Parameters</h3>
+
+        <label class="settings-label">
+          Session gap (minutes)
+          <span class="settings-hint">How long a pause before a new session starts</span>
+          <input type="number" class="settings-input" id="setting-session-gap" min="1" max="120" step="1" />
+        </label>
+
+        <label class="settings-label">
+          Data retention (days)
+          <span class="settings-hint">How far back to look for patterns</span>
+          <input type="number" class="settings-input" id="setting-data-retention" min="1" max="90" step="1" />
+        </label>
+
+        <label class="settings-label">
+          Archive after (days)
+          <span class="settings-hint">Projects not accessed within this window get archived</span>
+          <input type="number" class="settings-input" id="setting-archive-threshold" min="1" max="90" step="1" />
+        </label>
+
+        <label class="settings-label">
+          Overlap threshold (%)
+          <span class="settings-hint">Domain overlap needed to merge sessions into one project</span>
+          <input type="number" class="settings-input" id="setting-overlap-threshold" min="10" max="100" step="5" />
+        </label>
+
+        <label class="settings-label">
+          Max auto projects
+          <span class="settings-hint">Maximum number of active auto-detected projects shown</span>
+          <input type="number" class="settings-input" id="setting-max-projects" min="1" max="50" step="1" />
+        </label>
+
+        <button class="btn btn-primary settings-save" id="btn-save-settings">Save settings</button>
+        <button class="btn btn-secondary settings-reset" id="btn-reset-settings">Reset to defaults</button>
+
+        <h3 class="settings-heading settings-heading--blacklist">Domain Blacklist</h3>
+        <p class="settings-hint">Domains excluded from all auto-detected projects (e.g., spotify.com)</p>
+
+        <div class="blacklist-add">
+          <input type="text" class="settings-input blacklist-input" id="blacklist-input"
+            placeholder="domain.com" />
+          <button class="btn btn-primary" id="btn-add-blacklist">Add</button>
+        </div>
+
+        <div class="blacklist-list" id="blacklist-list"></div>
       </div>
     </div>
 
