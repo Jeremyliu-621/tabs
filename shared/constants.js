@@ -7,6 +7,9 @@ export const STORAGE_KEYS = {
   BLACKLIST: 'domain_blacklist',  // Array of blacklisted domain strings
   CLUSTERING_SETTINGS: 'clustering_settings', // User-editable clustering params
   LAST_ACTIVE_PROJECT: 'last_active_project',
+  AI_API_KEY: 'ai_api_key',       // Gemini API key
+  AI_CACHE: 'ai_cache',           // Cached AI clustering results
+  AI_METADATA: 'ai_analysis_metadata', // Analysis metadata (timestamps, counts)
 };
 
 // ── Tracking Thresholds ──────────────────────────────────────
@@ -65,3 +68,27 @@ export const IGNORED_URL_PREFIXES = [
   'edge://',
   'brave://',
 ];
+
+// ── AI Clustering ───────────────────────────────────────────
+export const AI = {
+  /** Gemini API endpoint */
+  GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent',
+  
+  /** Request timeout in milliseconds */
+  REQUEST_TIMEOUT: 10000, // 10 seconds
+  
+  /** Minimum tabs required before running AI analysis */
+  MIN_TABS_FOR_ANALYSIS: 10,
+  
+  /** Trigger: Run analysis if this many new tabs opened */
+  TRIGGER_NEW_TABS: 5,
+  
+  /** Trigger: Run analysis if this many minutes elapsed */
+  TRIGGER_TIME_MINUTES: 5,
+  
+  /** Maximum tabs to send to AI (privacy/performance) */
+  MAX_TABS_TO_ANALYZE: 100,
+  
+  /** Only analyze tabs from last N hours */
+  ANALYSIS_WINDOW_HOURS: 24,
+};

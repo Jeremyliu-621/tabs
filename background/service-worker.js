@@ -7,6 +7,7 @@
 
 import { startTracking } from './tracker.js';
 import { runClustering } from './clustering.js';
+import { runAIClustering, checkAndRunAIClustering } from './ai-clustering.js';
 
 // ── Initialization ───────────────────────────────────────────
 
@@ -17,35 +18,50 @@ chrome.runtime.onInstalled.addListener((details) => {
         console.log(`[Tabs] Extension updated to v${chrome.runtime.getManifest().version}`);
     }
 
-    // Run initial clustering after a short delay
-    setTimeout(() => runClustering(), 3000);
+    // Run initial AI clustering after a short delay
+    setTimeout(() => runAIClustering(true), 3000);
 });
 
 // Start tracking immediately when the service worker spins up
 startTracking();
 
-// ── Periodic clustering ──────────────────────────────────────
+// ── Smart trigger clustering ──────────────────────────────────
 
-// Run clustering every 30 seconds to keep projects continuously updated
-const CLUSTER_INTERVAL = 30 * 1000;
-let clusterTimer = null;
+// Check for clustering triggers on tab events
+chrome.tabs.onCreated.addListener(() => {
+    checkAndRunAIClustering();
+});
 
-function startClusterLoop() {
-    if (clusterTimer) clearInterval(clusterTimer);
-    clusterTimer = setInterval(async () => {
-        await runClustering();
-    }, CLUSTER_INTERVAL);
-}
-
-startClusterLoop();
+chrome.tabs.onUpdated.addListener(() => {
+    checkAndRunAIClustering();
+});
 
 // ── Message handling (popup → background) ────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === 'runClustering') {
+        // Legacy: use heuristic clustering
         runClustering()
             .then((projects) => sendResponse({ success: true, projects }))
             .catch((err) => sendResponse({ success: false, error: err.message }));
+        return true; // async response
+    }
+
+    if (msg.action === 'runAIClustering') {
+        // New: use AI clustering (with fallback)
+        runAIClustering(true) // Force analysis
+            .then((projects) => sendResponse({ success: true, projects }))
+            .catch((err) => sendResponse({ success: false, error: err.message }));
+        return true; // async response
+    }
+
+    if (msg.action === 'getCachedProjects') {
+        // Return cached projects for instant popup display
+        import('./cache.js').then(({ getCachedProjects }) => {
+            getCachedProjects()
+                .then((cache) => sendResponse({ success: true, cache }))
+                .catch((err) => sendResponse({ success: false, error: err.message }));
+        });
         return true; // async response
     }
 

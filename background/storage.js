@@ -247,3 +247,50 @@ export async function getDebugAnalytics() {
         sessions: sessionSummaries,
     };
 }
+
+// ── AI Clustering ──────────────────────────────────────────
+
+/**
+ * Get Gemini API key from storage.
+ */
+export async function getAIApiKey() {
+    return (await get(STORAGE_KEYS.AI_API_KEY)) || null;
+}
+
+/**
+ * Save Gemini API key to storage.
+ */
+export async function saveAIApiKey(apiKey) {
+    return set(STORAGE_KEYS.AI_API_KEY, apiKey);
+}
+
+/**
+ * Get cached AI clustering results.
+ */
+export async function getAICache() {
+    return (await get(STORAGE_KEYS.AI_CACHE)) || null;
+}
+
+/**
+ * Save cached AI clustering results.
+ */
+export async function saveAICache(cache) {
+    return set(STORAGE_KEYS.AI_CACHE, cache);
+}
+
+/**
+ * Get AI analysis metadata (last analysis time, tab count).
+ */
+export async function getAIMetadata() {
+    return (await get(STORAGE_KEYS.AI_METADATA)) || {
+        lastAnalysisTime: 0,
+        tabsAtLastAnalysis: 0,
+    };
+}
+
+/**
+ * Save AI analysis metadata.
+ */
+export async function saveAIMetadata(metadata) {
+    return set(STORAGE_KEYS.AI_METADATA, metadata);
+}

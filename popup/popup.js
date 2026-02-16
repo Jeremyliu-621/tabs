@@ -17,8 +17,10 @@ import {
     saveUserBlacklist,
     getClusteringSettings,
     saveClusteringSettings,
+    getTabEvents,
 } from '../background/storage.js';
 import { TRACKING, CLUSTERING } from '../shared/constants.js';
+import { getCachedProjects, shouldInvalidateCache } from '../background/cache.js';
 
 // ── Init ─────────────────────────────────────────────────────
 
@@ -29,9 +31,15 @@ async function init() {
     setupSettings();
 
     document.getElementById('btn-refresh').addEventListener('click', async () => {
-        // Trigger re-clustering in the background
-        chrome.runtime.sendMessage({ action: 'runClustering' }, () => {
-            loadData();
+        // Trigger AI re-clustering in the background
+        showUpdatingIndicator();
+        chrome.runtime.sendMessage({ action: 'runAIClustering' }, (response) => {
+            if (response && response.success) {
+                loadData();
+            } else {
+                hideUpdatingIndicator();
+                console.error('[Popup] Clustering failed:', response?.error);
+            }
         });
     });
 
@@ -53,6 +61,29 @@ async function init() {
 
 async function loadData() {
     try {
+        // 1. Load cached projects immediately for instant display
+        const cached = await getCachedProjects();
+        if (cached && cached.projects) {
+            const visible = cached.projects.filter((p) => !p.dismissed);
+            const active = visible.filter((p) => !p.archived);
+            const archived = visible.filter((p) => p.archived);
+            renderProjects(active);
+            renderArchivedProjects(archived);
+        }
+
+        // 2. Check if analysis is needed and trigger in background
+        // Get current tab count from events
+        const events = await getTabEvents();
+        const currentTabCount = new Set(events.filter(e => e.url).map(e => e.url)).size;
+        if (await shouldInvalidateCache(currentTabCount)) {
+            showUpdatingIndicator();
+            // Trigger analysis in background
+            chrome.runtime.sendMessage({ action: 'runAIClustering' }, () => {
+                // Analysis will update cache, which triggers storage listener
+            });
+        }
+
+        // 3. Load full data (analytics, etc.)
         const [analytics, projects] = await Promise.all([
             getDebugAnalytics(),
             getProjects(),
@@ -69,10 +100,37 @@ async function loadData() {
         renderConnections(analytics.coOccurrencePairs);
         renderSessions(analytics.sessions);
         renderEventLog(analytics.recentEvents);
+
+        hideUpdatingIndicator();
     } catch (err) {
         console.error('[Tabs] Popup error:', err);
+        hideUpdatingIndicator();
     }
 }
+
+// ── Loading indicators ────────────────────────────────────────
+
+function showUpdatingIndicator() {
+    const indicator = document.getElementById('updating-indicator');
+    if (indicator) {
+        indicator.classList.remove('hidden');
+    }
+}
+
+function hideUpdatingIndicator() {
+    const indicator = document.getElementById('updating-indicator');
+    if (indicator) {
+        indicator.classList.add('hidden');
+    }
+}
+
+// Listen for cache updates
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.ai_cache) {
+        // Cache updated, reload projects
+        loadData();
+    }
+});
 
 // ── View toggle (Projects / Settings / Debug) ────────────────
 
@@ -134,9 +192,18 @@ function createProjectCard(project, isArchived = false) {
     // ── Header row
     const header = document.createElement('div');
     header.className = 'project-header';
+    
+    // Source badge
+    const sourceBadge = project.source === 'ai' 
+        ? '<span class="source-badge source-badge--ai" title="AI Enhanced">✨ AI Enhanced</span>'
+        : project.autoDetected 
+            ? '<span class="source-badge source-badge--heuristic" title="Auto-detected">Auto-detected</span>'
+            : '';
+    
     header.innerHTML = `
     <span class="project-expand">▶</span>
     <span class="project-name">${esc(project.name)}</span>
+    ${sourceBadge}
     <div class="project-meta">
       <span class="project-time">${formatTimeAgo(project.lastAccessed)}</span>
       <button class="project-star ${project.starred ? 'starred' : ''}"
@@ -152,6 +219,7 @@ function createProjectCard(project, isArchived = false) {
 
     header.addEventListener('click', (e) => {
         if (e.target.closest('.project-star')) return;
+        if (e.target.closest('.project-name-edit')) return;
         card.classList.toggle('expanded');
 
         // Persist expanded state
@@ -271,8 +339,37 @@ function createProjectCard(project, isArchived = false) {
             loadData();
         });
 
+        // Pin button
+        const pinBtn = document.createElement('button');
+        pinBtn.className = `btn btn-secondary project-pin ${project.pinned ? 'pinned' : ''}`;
+        pinBtn.textContent = project.pinned ? '📌 Pinned' : 'Pin';
+        pinBtn.title = project.pinned ? 'Unpin project (include in AI analysis)' : 'Pin project (exclude from AI analysis)';
+        pinBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const allProjects = await getProjects();
+            const p = allProjects.find((x) => x.id === project.id);
+            if (p) {
+                p.pinned = !p.pinned;
+                await saveProjects(allProjects);
+                project.pinned = p.pinned;
+                pinBtn.textContent = p.pinned ? '📌 Pinned' : 'Pin';
+                pinBtn.classList.toggle('pinned', p.pinned);
+            }
+        });
+
+        // Edit name button
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-secondary';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            editProjectName(project);
+        });
+
         actions.appendChild(switchBtn);
         actions.appendChild(openBtn);
+        actions.appendChild(pinBtn);
+        actions.appendChild(editBtn);
         actions.appendChild(deleteBtn);
     }
 
@@ -479,6 +576,63 @@ function setupModal() {
 
 function generateId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ── Manual Project Controls ──────────────────────────────────
+
+/**
+ * Edit project name inline.
+ */
+async function editProjectName(project) {
+    const nameEl = document.querySelector(`[data-project-id="${project.id}"] .project-name`);
+    if (!nameEl) return;
+
+    const originalName = project.name;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'project-name-edit';
+    input.value = originalName;
+    input.style.cssText = `
+        font-family: inherit;
+        font-size: 0.95rem;
+        font-weight: 600;
+        border: 1px solid var(--color-accent);
+        border-radius: 4px;
+        padding: 2px 6px;
+        width: 100%;
+        outline: none;
+    `;
+
+    const saveEdit = async () => {
+        const newName = input.value.trim();
+        if (newName && newName !== originalName) {
+            const allProjects = await getProjects();
+            const p = allProjects.find((x) => x.id === project.id);
+            if (p) {
+                p.name = newName;
+                await saveProjects(allProjects);
+                loadData();
+            }
+        } else {
+            nameEl.textContent = originalName;
+        }
+    };
+
+    input.addEventListener('blur', saveEdit);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            input.blur();
+        } else if (e.key === 'Escape') {
+            nameEl.textContent = originalName;
+            input.remove();
+        }
+    });
+
+    nameEl.textContent = '';
+    nameEl.appendChild(input);
+    input.focus();
+    input.select();
 }
 
 // ══════════════════════════════════════════════════════════════
