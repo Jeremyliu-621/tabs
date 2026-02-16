@@ -58,9 +58,10 @@ async function loadData() {
             getProjects(),
         ]);
 
-        // Split active and archived
-        const active = projects.filter((p) => !p.archived);
-        const archived = projects.filter((p) => p.archived);
+        // Filter out dismissed, then split active and archived
+        const visible = projects.filter((p) => !p.dismissed);
+        const active = visible.filter((p) => !p.archived);
+        const archived = visible.filter((p) => p.archived);
 
         renderProjects(active);
         renderArchivedProjects(archived);
@@ -224,8 +225,11 @@ function createProjectCard(project, isArchived = false) {
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', async () => {
             const allProjects = await getProjects();
-            const filtered = allProjects.filter((p) => p.id !== project.id);
-            await saveProjects(filtered);
+            const p = allProjects.find((x) => x.id === project.id);
+            if (p) {
+                p.dismissed = true;
+                await saveProjects(allProjects);
+            }
             loadData();
         });
 
@@ -259,14 +263,12 @@ function createProjectCard(project, isArchived = false) {
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', async () => {
             const allProjects = await getProjects();
-            const filtered = allProjects.filter((p) => p.id !== project.id);
-            await saveProjects(filtered);
-            card.remove();
-            // Show empty state if no projects left
-            const remaining = filtered.filter((p) => !p.archived);
-            if (remaining.length === 0) {
-                document.getElementById('projects-empty').classList.remove('hidden');
+            const p = allProjects.find((x) => x.id === project.id);
+            if (p) {
+                p.dismissed = true;
+                await saveProjects(allProjects);
             }
+            loadData();
         });
 
         actions.appendChild(switchBtn);

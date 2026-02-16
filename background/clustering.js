@@ -51,18 +51,23 @@ export async function runClustering() {
     // Step 4: Load existing projects and separate manual from auto-detected
     const existingProjects = await getProjects();
     const manualProjects = existingProjects.filter((p) => !p.autoDetected);
-    const prevAutoDetected = existingProjects.filter((p) => p.autoDetected);
+    const prevAutoDetected = existingProjects.filter((p) => p.autoDetected && !p.dismissed);
+    const dismissedProjects = existingProjects.filter((p) => p.autoDetected && p.dismissed);
 
-    // Step 5: Deduplicate candidates against existing auto-detected projects
+    // Step 5: Deduplicate candidates against existing AND dismissed projects
+    // Dismissed projects participate in dedup so candidates don't get recreated
     const deduplicated = deduplicateProjects(
-        prevAutoDetected,
+        [...prevAutoDetected, ...dismissedProjects],
         candidates,
         settings.overlapThreshold
     );
 
+    // Strip dismissed projects back out — they only existed to block recreation
+    const withoutDismissed = deduplicated.filter((p) => !p.dismissed);
+
     // Step 6: Mark archived projects
     const withArchiveStatus = markArchivedProjects(
-        deduplicated,
+        withoutDismissed,
         settings.archiveThreshold
     );
 
@@ -78,8 +83,8 @@ export async function runClustering() {
     const activeCount = sorted.filter((p) => !p.archived).length;
     const capped = capActiveProjects(sorted, settings.maxAutoProjects);
 
-    // Step 10: Combine with manual projects and save
-    const final = [...manualProjects, ...capped.map(cleanForStorage)];
+    // Step 10: Combine with manual projects and dismissed (to persist blocking), then save
+    const final = [...manualProjects, ...capped.map(cleanForStorage), ...dismissedProjects];
     await saveProjects(final);
 
     console.log(
