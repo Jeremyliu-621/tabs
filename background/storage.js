@@ -1,4 +1,4 @@
-import { STORAGE_KEYS, RETENTION, TRACKING, CLUSTERING } from '../shared/constants.js';
+import { STORAGE_KEYS, RETENTION, TRACKING, CLUSTERING, AI } from '../shared/constants.js';
 
 /**
  * Thin wrapper around chrome.storage.local.
@@ -246,4 +246,41 @@ export async function getDebugAnalytics() {
         recentEvents,
         sessions: sessionSummaries,
     };
+}
+
+// ── AI Cache ─────────────────────────────────────────────────
+
+/**
+ * Get the cached AI refinement result.
+ * Returns { fingerprint, projects, timestamp } or null.
+ */
+export async function getAICache() {
+    return (await get(STORAGE_KEYS.AI_CACHE)) || null;
+}
+
+/**
+ * Save an AI refinement result to cache.
+ */
+export async function saveAICache(cache) {
+    return set(STORAGE_KEYS.AI_CACHE, cache);
+}
+
+// ── AI Settings ──────────────────────────────────────────────
+
+/**
+ * Get AI settings (currently just { enabled }).
+ */
+export async function getAISettings() {
+    const saved = (await get(STORAGE_KEYS.AI_SETTINGS)) || {};
+    return {
+        enabled: saved.enabled !== false, // default: enabled
+    };
+}
+
+/**
+ * Save AI settings.
+ */
+export async function saveAISettings(settings) {
+    const current = await getAISettings();
+    return set(STORAGE_KEYS.AI_SETTINGS, { ...current, ...settings });
 }

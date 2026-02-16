@@ -9,6 +9,9 @@
     "unlimitedStorage",
     "activeTab"
   ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*"
+  ],
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"

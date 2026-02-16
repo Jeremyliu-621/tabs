@@ -17,6 +17,9 @@ import {
     saveUserBlacklist,
     getClusteringSettings,
     saveClusteringSettings,
+    getAISettings,
+    saveAISettings,
+    getAICache,
 } from '../background/storage.js';
 import { TRACKING, CLUSTERING } from '../shared/constants.js';
 
@@ -27,6 +30,7 @@ async function init() {
     setupDebugTabs();
     setupModal();
     setupSettings();
+    setupAISettings();
 
     document.getElementById('btn-refresh').addEventListener('click', async () => {
         // Trigger re-clustering in the background
@@ -69,6 +73,7 @@ async function loadData() {
         renderConnections(analytics.coOccurrencePairs);
         renderSessions(analytics.sessions);
         renderEventLog(analytics.recentEvents);
+        updateAIStatus();
     } catch (err) {
         console.error('[Tabs] Popup error:', err);
     }
@@ -137,6 +142,7 @@ function createProjectCard(project, isArchived = false) {
     header.innerHTML = `
     <span class="project-expand">▶</span>
     <span class="project-name">${esc(project.name)}</span>
+    ${project.aiRefined ? '<span class="ai-badge" title="Refined by AI">✨</span>' : ''}
     <div class="project-meta">
       <span class="project-time">${formatTimeAgo(project.lastAccessed)}</span>
       <button class="project-star ${project.starred ? 'starred' : ''}"
@@ -623,6 +629,48 @@ async function addBlacklistDomain() {
     chrome.runtime.sendMessage({ action: 'runClustering' }, () => {
         loadData();
     });
+}
+
+// ── AI Settings ──────────────────────────────────────────────
+
+async function setupAISettings() {
+    const settings = await getAISettings();
+    const toggle = document.getElementById('setting-ai-enabled');
+    if (toggle) {
+        toggle.checked = settings.enabled;
+        toggle.addEventListener('change', async () => {
+            await saveAISettings({ enabled: toggle.checked });
+            // Re-run clustering to apply AI changes
+            chrome.runtime.sendMessage({ action: 'runClustering' }, () => {
+                loadData();
+            });
+        });
+    }
+    updateAIStatus();
+}
+
+async function updateAIStatus() {
+    const statusEl = document.getElementById('ai-status');
+    if (!statusEl) return;
+
+    const settings = await getAISettings();
+    const dot = statusEl.querySelector('.ai-status-dot');
+    const text = statusEl.querySelector('.ai-status-text');
+
+    if (!settings.enabled) {
+        dot.className = 'ai-status-dot ai-status-dot--disabled';
+        text.textContent = 'AI refinement is disabled';
+        return;
+    }
+
+    const cache = await getAICache();
+    if (cache && cache.timestamp) {
+        dot.className = 'ai-status-dot ai-status-dot--active';
+        text.textContent = `Last AI analysis: ${formatTimeAgo(cache.timestamp)}`;
+    } else {
+        dot.className = 'ai-status-dot ai-status-dot--waiting';
+        text.textContent = 'Waiting for first analysis…';
+    }
 }
 
 // ══════════════════════════════════════════════════════════════

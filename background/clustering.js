@@ -6,6 +6,7 @@ import {
     getUserBlacklist,
     getClusteringSettings,
 } from './storage.js';
+import { refineProjectsWithAI } from './ai-grouping.js';
 
 /**
  * Session-based clustering engine for automatic project detection.
@@ -65,25 +66,28 @@ export async function runClustering() {
     // Strip dismissed projects back out — they only existed to block recreation
     const withoutDismissed = deduplicated.filter((p) => !p.dismissed);
 
-    // Step 6: Mark archived projects
+    // Step 6: AI refinement (rename, filter distractions, reassign tabs)
+    const aiRefined = await refineProjectsWithAI(withoutDismissed);
+
+    // Step 7: Mark archived projects
     const withArchiveStatus = markArchivedProjects(
-        withoutDismissed,
+        aiRefined,
         settings.archiveThreshold
     );
 
-    // Step 7: Apply domain blacklist
+    // Step 8: Apply domain blacklist
     const blacklist = await getUserBlacklist();
     const filtered = applyBlacklist(withArchiveStatus, blacklist);
 
-    // Step 8: Restore user customizations (starred, renamed)
+    // Step 9: Restore user customizations (starred, renamed)
     const restored = restoreUserCustomizations(filtered, prevAutoDetected);
 
-    // Step 9: Sort and cap
+    // Step 10: Sort and cap
     const sorted = sortProjects(restored);
     const activeCount = sorted.filter((p) => !p.archived).length;
     const capped = capActiveProjects(sorted, settings.maxAutoProjects);
 
-    // Step 10: Combine with manual projects and dismissed (to persist blocking), then save
+    // Step 11: Combine with manual projects and dismissed (to persist blocking), then save
     const final = [...manualProjects, ...capped.map(cleanForStorage), ...dismissedProjects];
     await saveProjects(final);
 
