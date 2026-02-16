@@ -96,6 +96,22 @@
         </div>
 
         <div class="blacklist-list" id="blacklist-list"></div>
+
+        <h3 class="settings-heading settings-heading--ai">AI Refinement</h3>
+        <p class="settings-hint">Uses Gemini AI to intelligently rename projects, filter distractions, and group related tabs by content.</p>
+
+        <label class="settings-label settings-label--toggle">
+          <span class="toggle-text">Enable AI refinement</span>
+          <div class="toggle-switch">
+            <input type="checkbox" id="setting-ai-enabled" />
+            <span class="toggle-slider"></span>
+          </div>
+        </label>
+
+        <div class="ai-status" id="ai-status">
+          <span class="ai-status-dot"></span>
+          <span class="ai-status-text">Waiting for first analysis…</span>
+        </div>
       </div>
     </div>
 

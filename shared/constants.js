@@ -7,6 +7,8 @@ export const STORAGE_KEYS = {
   BLACKLIST: 'domain_blacklist',  // Array of blacklisted domain strings
   CLUSTERING_SETTINGS: 'clustering_settings', // User-editable clustering params
   LAST_ACTIVE_PROJECT: 'last_active_project',
+  AI_CACHE: 'ai_cache',           // Cached AI refinement result + fingerprint
+  AI_SETTINGS: 'ai_settings',     // { enabled: boolean }
 };
 
 // ── Tracking Thresholds ──────────────────────────────────────
@@ -65,3 +67,18 @@ export const IGNORED_URL_PREFIXES = [
   'edge://',
   'brave://',
 ];
+
+// ── AI Grouping ──────────────────────────────────────────────
+export const AI = {
+  /** Gemini model to use */
+  MODEL: 'gemini-2.0-flash',
+
+  /** Gemini REST API base URL */
+  API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
+
+  /** Minimum interval (ms) between AI refinement calls */
+  MIN_INTERVAL: 5 * 60 * 1000, // 5 minutes
+
+  /** Maximum number of tabs to send per AI request (cost control) */
+  MAX_TABS_PER_REQUEST: 80,
+};
