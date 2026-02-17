@@ -406,7 +406,7 @@ LAYOUT:
 │  📋 All Projects (12)    ▼  │ ← Expandable section
 ├─────────────────────────────┤
 │  [+ Create Project]         │ ← Manual creation
-│  [✨ Detect Projects]        │ ← Trigger AI analysis
+│  [✨]                       │ ← Trigger AI analysis
 └─────────────────────────────┘
 
 PROJECT CARD STATES:

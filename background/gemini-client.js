@@ -253,39 +253,88 @@ function parseResponse(responseText) {
         
         const parsed = JSON.parse(cleaned);
         
+        console.log('[Gemini] Parsed response:', {
+            hasProjects: !!parsed.projects,
+            projectsCount: parsed.projects?.length || 0,
+            firstProject: parsed.projects?.[0],
+        });
+        
         if (!parsed.projects || !Array.isArray(parsed.projects)) {
             throw new Error('Invalid response structure: missing projects array');
         }
 
         // Convert to project format matching existing structure
         const projects = parsed.projects.map((p) => {
-            if (!p.name || !p.tabs || !Array.isArray(p.tabs)) {
-                throw new Error('Invalid project structure');
+            if (!p.name) {
+                throw new Error('Invalid project structure: missing name');
+            }
+            if (!p.tabs || !Array.isArray(p.tabs)) {
+                console.warn('[Gemini] Project missing tabs array:', p.name, p);
+                // Create empty branches if no tabs
+                return {
+                    id: generateId(),
+                    name: p.name,
+                    autoDetected: true,
+                    starred: false,
+                    archived: false,
+                    lastAccessed: Date.now(),
+                    createdAt: Date.now(),
+                    branches: [],
+                    source: 'ai',
+                    confidence: p.confidence || 0.5,
+                };
             }
 
             // Group tabs by domain
             const domainMap = new Map();
+            let validTabsCount = 0;
+            let invalidTabsCount = 0;
+            
             for (const tab of p.tabs) {
-                if (!tab.url) continue; // Skip tabs without URLs
+                if (!tab || (!tab.url && !tab.title)) {
+                    invalidTabsCount++;
+                    continue; // Skip tabs without URLs or titles
+                }
+                
+                // Handle both string URLs and object URLs
+                const tabUrl = typeof tab.url === 'string' ? tab.url : (tab.url?.url || '');
+                const tabTitle = tab.title || tab.url?.title || '';
+                
+                if (!tabUrl) {
+                    invalidTabsCount++;
+                    continue;
+                }
+                
                 try {
-                    const url = new URL(tab.url);
+                    // Ensure URL is absolute (add https:// if missing)
+                    let fullUrl = tabUrl;
+                    if (!tabUrl.startsWith('http://') && !tabUrl.startsWith('https://')) {
+                        fullUrl = 'https://' + tabUrl;
+                    }
+                    
+                    const url = new URL(fullUrl);
                     const domain = url.hostname.replace(/^www\./, '');
                     
                     if (!domainMap.has(domain)) {
                         domainMap.set(domain, []);
                     }
                     domainMap.get(domain).push({
-                        url: tab.url,
-                        title: tab.title || '',
+                        url: fullUrl,
+                        title: tabTitle,
                     });
+                    validTabsCount++;
                 } catch (e) {
                     // Skip invalid URLs
-                    console.warn('[Gemini] Skipping invalid URL:', tab.url, e);
+                    invalidTabsCount++;
+                    console.warn('[Gemini] Skipping invalid URL:', tabUrl, e);
                 }
+            }
+            
+            if (invalidTabsCount > 0) {
+                console.warn(`[Gemini] Skipped ${invalidTabsCount} invalid tabs in project "${p.name}"`);
             }
 
             // Build branches (one per domain)
-            // Ensure we always have at least an empty array
             const branches = domainMap.size > 0
                 ? Array.from(domainMap.entries()).map(([domain, tabs]) => ({
                     id: generateId(),
@@ -297,12 +346,37 @@ function parseResponse(responseText) {
             // Sort branches by number of tabs (most active domain first)
             branches.sort((a, b) => b.tabs.length - a.tabs.length);
 
-            // Validate we have branches
-            if (branches.length === 0) {
-                console.warn('[Gemini] Project has no valid branches:', p.name);
+            // CRITICAL: Never return a project with empty branches
+            // If all tabs failed parsing, skip this project entirely
+            if (branches.length === 0 || validTabsCount === 0) {
+                console.error('[Gemini] CRITICAL: Project has no valid branches after processing tabs - SKIPPING:', {
+                    name: p.name,
+                    tabsCount: p.tabs?.length || 0,
+                    validTabsCount,
+                    invalidTabsCount,
+                    sampleTabs: p.tabs?.slice(0, 3), // Show first 3 tabs for debugging
+                });
+                // Return null to signal this project should be filtered out
+                return null;
             }
 
-            return {
+            // Validate branch structure before proceeding
+            for (const branch of branches) {
+                if (!branch.domain || !Array.isArray(branch.tabs) || branch.tabs.length === 0) {
+                    console.error('[Gemini] CRITICAL: Invalid branch structure detected:', branch);
+                    // This should never happen, but if it does, skip the project
+                    return null;
+                }
+            }
+
+            console.log('[Gemini] Created project with branches:', {
+                name: p.name,
+                branchesCount: branches.length,
+                totalTabs: branches.reduce((sum, b) => sum + b.tabs.length, 0),
+            });
+
+            // At this point, branches is guaranteed to be non-empty and valid
+            const project = {
                 id: generateId(),
                 name: p.name,
                 autoDetected: true,
@@ -310,13 +384,50 @@ function parseResponse(responseText) {
                 archived: false,
                 lastAccessed: Date.now(),
                 createdAt: Date.now(),
-                branches,
+                branches, // Already validated: [{ domain, tabs: [{ url, title }] }]
                 source: 'ai',
                 confidence: p.confidence || 0.5,
             };
+
+            // Final validation - this should never fail if we got here
+            if (!project.branches || !Array.isArray(project.branches) || project.branches.length === 0) {
+                console.error('[Gemini] CRITICAL: Project branches validation failed - this should never happen!', project);
+                return null; // Skip this project
+            }
+
+            // Validate each branch has the correct structure
+            for (const branch of project.branches) {
+                if (!branch.domain || !Array.isArray(branch.tabs) || branch.tabs.length === 0) {
+                    console.error('[Gemini] CRITICAL: Invalid branch structure in final validation:', branch);
+                    return null; // Skip this project
+                }
+            }
+
+            return project;
         });
 
-        return projects;
+        // Filter out null projects (projects that failed validation)
+        const validProjects = projects.filter((p) => {
+            if (!p) {
+                return false; // Filter out null projects
+            }
+            
+            // Double-check: ensure branches exist and have tabs
+            const hasBranches = p.branches && Array.isArray(p.branches) && p.branches.length > 0;
+            const hasTabs = hasBranches && p.branches.some((b) => b.tabs && Array.isArray(b.tabs) && b.tabs.length > 0);
+            
+            if (!hasTabs) {
+                console.warn('[Gemini] Filtering out project with no tabs (should not happen):', p.name);
+            }
+            
+            return hasTabs;
+        });
+
+        if (validProjects.length < projects.length) {
+            console.warn(`[Gemini] Filtered out ${projects.length - validProjects.length} projects with no valid tabs`);
+        }
+
+        return validProjects;
     } catch (error) {
         console.error('[Gemini] Failed to parse response:', error);
         throw new Error(`Invalid API response: ${error.message}`);

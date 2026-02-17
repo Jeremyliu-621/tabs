@@ -59,16 +59,28 @@ async function init() {
     });
 }
 
+// Track loading state to prevent concurrent loads
+let isLoadingData = false;
+let lastRenderedTimestamp = 0;
+
 async function loadData() {
+    // Prevent concurrent loads
+    if (isLoadingData) {
+        return;
+    }
+    
+    isLoadingData = true;
+    
     try {
-        // 1. Load cached projects immediately for instant display
+        // 1. Load cached projects immediately for instant display (only if newer)
         const cached = await getCachedProjects();
-        if (cached && cached.projects) {
+        if (cached && cached.projects && cached.timestamp > lastRenderedTimestamp) {
             const visible = cached.projects.filter((p) => !p.dismissed);
             const active = visible.filter((p) => !p.archived);
             const archived = visible.filter((p) => p.archived);
             renderProjects(active);
             renderArchivedProjects(archived);
+            lastRenderedTimestamp = cached.timestamp;
         }
 
         // 2. Check if analysis is needed and trigger in background
@@ -94,8 +106,15 @@ async function loadData() {
         const active = visible.filter((p) => !p.archived);
         const archived = visible.filter((p) => p.archived);
 
-        renderProjects(active);
-        renderArchivedProjects(archived);
+        // Only re-render if data actually changed (compare with cached timestamp)
+        const projectsTimestamp = Date.now(); // Use current time as projects timestamp
+        if (projectsTimestamp > lastRenderedTimestamp) {
+            renderProjects(active);
+            renderArchivedProjects(archived);
+            lastRenderedTimestamp = projectsTimestamp;
+        }
+        
+        // Always update analytics (they don't cause project re-renders)
         renderDomains(analytics.domainFrequency);
         renderConnections(analytics.coOccurrencePairs);
         renderSessions(analytics.sessions);
@@ -105,6 +124,8 @@ async function loadData() {
     } catch (err) {
         console.error('[Tabs] Popup error:', err);
         hideUpdatingIndicator();
+    } finally {
+        isLoadingData = false;
     }
 }
 
@@ -124,11 +145,31 @@ function hideUpdatingIndicator() {
     }
 }
 
+// Debounce storage listener to prevent rapid re-renders
+let storageUpdateTimer = null;
+let lastCacheTimestamp = 0;
+
 // Listen for cache updates
 chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.ai_cache) {
-        // Cache updated, reload projects
-        loadData();
+        // Check if cache actually changed (compare timestamps)
+        const newCache = changes.ai_cache.newValue;
+        const newTimestamp = newCache?.timestamp || 0;
+        
+        // Only reload if timestamp is newer (cache actually updated)
+        if (newTimestamp > lastCacheTimestamp) {
+            lastCacheTimestamp = newTimestamp;
+            
+            // Debounce: wait 200ms before reloading to batch rapid updates
+            if (storageUpdateTimer) {
+                clearTimeout(storageUpdateTimer);
+            }
+            
+            storageUpdateTimer = setTimeout(() => {
+                loadData();
+                storageUpdateTimer = null;
+            }, 200);
+        }
     }
 });
 
@@ -165,22 +206,129 @@ function setupDebugTabs() {
 // PROJECTS
 // ══════════════════════════════════════════════════════════════
 
+// Track rendered projects to enable diffing
+let renderedProjects = new Map(); // projectId -> project data hash
+
+/**
+ * Generate a hash of project data for comparison.
+ * Only includes properties that affect visual display.
+ * Excludes lastAccessed to prevent false positives from timestamp updates.
+ */
+function projectHash(project) {
+    if (!project) return '';
+    
+    // Hash based on key properties that affect display (excluding lastAccessed)
+    const key = `${project.id}|${project.name}|${project.branches?.length || 0}|${project.starred}|${project.archived}`;
+    
+    // Include actual branch/tab content, not just counts
+    // This ensures we detect when tabs are added/removed or branches change
+    const branchInfo = project.branches?.map(b => {
+        const tabUrls = b.tabs?.map(t => t.url).sort().join(',') || '';
+        return `${b.domain}:${b.tabs?.length || 0}:${tabUrls.substring(0, 100)}`; // Limit URL length for hash
+    }).join('|') || '';
+    
+    return `${key}|${branchInfo}`;
+}
+
 function renderProjects(projects) {
     const list = document.getElementById('project-list');
     const empty = document.getElementById('projects-empty');
 
-    // Clear existing project cards but keep the empty state
-    list.querySelectorAll('.project-card').forEach((c) => c.remove());
-
     if (!projects || projects.length === 0) {
+        // Clear all if no projects
+        list.querySelectorAll('.project-card').forEach((c) => c.remove());
+        renderedProjects.clear();
         empty.classList.remove('hidden');
         return;
     }
     empty.classList.add('hidden');
 
+    // Build map of incoming projects by ID
+    const incomingProjects = new Map();
+    const incomingIds = new Set();
+    
     for (const project of projects) {
-        const card = createProjectCard(project);
-        list.appendChild(card);
+        if (!project.id) {
+            console.warn('[Popup] Project missing ID:', project);
+            continue;
+        }
+        incomingProjects.set(project.id, project);
+        incomingIds.add(project.id);
+    }
+
+    // Remove projects that no longer exist
+    for (const [projectId, card] of renderedProjects.entries()) {
+        if (!incomingIds.has(projectId)) {
+            const cardEl = list.querySelector(`[data-project-id="${projectId}"]`);
+            if (cardEl) {
+                cardEl.remove();
+            }
+            renderedProjects.delete(projectId);
+        }
+    }
+
+    // Update or create projects
+    for (const project of projects) {
+        if (!project.id) continue;
+        
+        const existingHash = renderedProjects.get(project.id);
+        const newHash = projectHash(project);
+        
+        // Find existing card
+        const existingCard = list.querySelector(`[data-project-id="${project.id}"]`);
+        
+        // Only update if project actually changed
+        if (existingHash === newHash && existingCard) {
+            // No changes, skip update
+            continue;
+        }
+
+        // Project changed or doesn't exist - create/update card
+        if (existingCard) {
+            // Update existing card in place
+            const newCard = createProjectCard(project);
+            existingCard.replaceWith(newCard);
+        } else {
+            // Create new card and append
+            const card = createProjectCard(project);
+            list.appendChild(card);
+        }
+        
+        // Update hash
+        renderedProjects.set(project.id, newHash);
+    }
+    
+    // Reorder cards to match projects array order (only if order actually changed)
+    const currentCards = Array.from(list.querySelectorAll('.project-card'));
+    const projectIds = projects.map(p => p.id).filter(Boolean);
+    
+    // Check if order is correct by comparing current order with desired order
+    let needsReorder = false;
+    if (currentCards.length !== projectIds.length) {
+        needsReorder = true; // Different number of cards
+    } else {
+        // Check if each card is in the correct position
+        for (let i = 0; i < currentCards.length; i++) {
+            if (currentCards[i].dataset.projectId !== projectIds[i]) {
+                needsReorder = true;
+                break;
+            }
+        }
+    }
+    
+    // Only reorder if order actually changed
+    if (needsReorder && projectIds.length > 0) {
+        // Use DocumentFragment to batch DOM operations
+        const fragment = document.createDocumentFragment();
+        for (const projectId of projectIds) {
+            const card = list.querySelector(`[data-project-id="${projectId}"]`);
+            if (card) {
+                fragment.appendChild(card); // This removes card from list automatically
+            }
+        }
+        // Clear list and append all cards in correct order
+        list.innerHTML = '';
+        list.appendChild(fragment);
     }
 }
 
@@ -195,7 +343,7 @@ function createProjectCard(project, isArchived = false) {
     
     // Source badge
     const sourceBadge = project.source === 'ai' 
-        ? '<span class="source-badge source-badge--ai" title="AI Enhanced">✨ AI Enhanced</span>'
+        ? '<span class="source-badge source-badge--ai" title="AI Enhanced">✨</span>'
         : project.autoDetected 
             ? '<span class="source-badge source-badge--heuristic" title="Auto-detected">Auto-detected</span>'
             : '';
@@ -254,18 +402,80 @@ function createProjectCard(project, isArchived = false) {
     const branchContainer = document.createElement('div');
     branchContainer.className = 'project-branches';
 
+    // Debug: Log branch data
+    if (!project.branches) {
+        console.warn('[Popup] Project has no branches property:', project.name, project);
+    } else if (project.branches.length === 0) {
+        console.warn('[Popup] Project has empty branches array:', project.name);
+    }
+
     if (project.branches && project.branches.length > 0) {
-        const grid = document.createElement('div');
-        grid.className = 'branch-grid';
+        // Check if project name matches single branch domain
+        const normalizedProjectName = normalizeForComparison(project.name);
+        const hasSingleBranch = project.branches.length === 1;
+        const singleBranch = hasSingleBranch ? project.branches[0] : null;
+        const normalizedBranchDomain = singleBranch ? normalizeForComparison(cleanBranchDomain(singleBranch.domain)) : '';
+        const shouldSkipBranchDisplay = hasSingleBranch && normalizedProjectName === normalizedBranchDomain;
 
-        for (let i = 0; i < project.branches.length; i++) {
-            const branch = project.branches[i];
-            const isLast = i === project.branches.length - 1;
-            const branchEl = createBranchElement(branch, isLast);
-            grid.appendChild(branchEl);
+        if (shouldSkipBranchDisplay) {
+            // Skip branch structure, show tabs directly
+            const tabList = document.createElement('div');
+            tabList.className = 'branch-tabs';
+            tabList.style.cssText = 'padding-left: 0;'; // Remove left padding since no branch header
+
+            // Deduplicate tabs by title
+            const seenTitles = new Set();
+            const uniqueTabs = singleBranch.tabs.filter((t) => {
+                if (seenTitles.has(t.title)) return false;
+                seenTitles.add(t.title);
+                return true;
+            });
+
+            const displayTabs = uniqueTabs.slice(0, 10); // Show more tabs when no branch structure
+            for (let i = 0; i < displayTabs.length; i++) {
+                const tab = displayTabs[i];
+                const isTabLast = i === displayTabs.length - 1 && uniqueTabs.length <= 10;
+                const tabEl = document.createElement('div');
+                tabEl.className = 'branch-tab';
+                tabEl.innerHTML = `
+                    <span class="branch-tab-prefix">${isTabLast ? '└' : '├'}</span>
+                    <a class="branch-tab-link" title="${esc(tab.title)}">${esc(tab.title)}</a>
+                `;
+                tabEl.querySelector('.branch-tab-link').addEventListener('click', () => {
+                    chrome.runtime.sendMessage({ action: 'openTabs', urls: [tab.url] });
+                });
+                tabList.appendChild(tabEl);
+            }
+
+            if (uniqueTabs.length > 10) {
+                const more = document.createElement('div');
+                more.className = 'branch-tab';
+                more.innerHTML = `<span class="branch-tab-prefix">└</span><span class="branch-tab-link">+${uniqueTabs.length - 10} more</span>`;
+                tabList.appendChild(more);
+            }
+
+            branchContainer.appendChild(tabList);
+        } else {
+            // Show normal branch structure
+            const grid = document.createElement('div');
+            grid.className = 'branch-grid';
+
+            for (let i = 0; i < project.branches.length; i++) {
+                const branch = project.branches[i];
+                const isLast = i === project.branches.length - 1;
+                const branchEl = createBranchElement(branch, isLast);
+                grid.appendChild(branchEl);
+            }
+
+            branchContainer.appendChild(grid);
         }
-
-        branchContainer.appendChild(grid);
+    } else {
+        // Show message if no branches
+        const noBranchesMsg = document.createElement('div');
+        noBranchesMsg.className = 'no-branches-message';
+        noBranchesMsg.style.cssText = 'padding: 8px; color: var(--color-text-secondary); font-size: 0.75rem; font-style: italic;';
+        noBranchesMsg.textContent = 'No tabs in this project';
+        branchContainer.appendChild(noBranchesMsg);
     }
 
     // ── Actions
@@ -380,6 +590,44 @@ function createProjectCard(project, isArchived = false) {
     return card;
 }
 
+/**
+ * Clean and decode branch domain name.
+ * Removes URL encoding and makes it readable.
+ */
+function cleanBranchDomain(domain) {
+    if (!domain) return '';
+    try {
+        // Decode URL encoding
+        let cleaned = decodeURIComponent(domain);
+        // Remove any trailing URL-encoded parts that might have been added
+        // e.g., "khanacademy.org%20-%20khan%20academy" -> "khanacademy.org - khan academy"
+        // But we want just the domain, so extract the domain part
+        const domainMatch = cleaned.match(/^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}/);
+        if (domainMatch) {
+            return domainMatch[0];
+        }
+        // If no match, try to extract domain from the start
+        const parts = cleaned.split(/[\s\-]/);
+        for (const part of parts) {
+            if (part.includes('.')) {
+                return part;
+            }
+        }
+        return cleaned;
+    } catch {
+        // If decoding fails, return original
+        return domain;
+    }
+}
+
+/**
+ * Normalize string for comparison (lowercase, trim, remove special chars).
+ */
+function normalizeForComparison(str) {
+    if (!str) return '';
+    return str.toLowerCase().trim().replace(/[^\w.]/g, '');
+}
+
 function createBranchElement(branch, isLast) {
     const wrapper = document.createElement('div');
     wrapper.className = 'branch-item';
@@ -390,10 +638,13 @@ function createBranchElement(branch, isLast) {
     treeEl.className = 'branch-tree-line';
     treeEl.textContent = prefix;
 
+    // Clean the branch domain name
+    const cleanDomain = cleanBranchDomain(branch.domain);
+
     const nameEl = document.createElement('span');
     nameEl.className = 'branch-name';
-    nameEl.textContent = branch.domain;
-    nameEl.title = `Open all ${branch.domain} tabs`;
+    nameEl.textContent = cleanDomain;
+    nameEl.title = `Open all ${cleanDomain} tabs`;
     nameEl.addEventListener('click', () => {
         const urls = branch.tabs.map((t) => t.url);
         if (urls.length > 0) {
