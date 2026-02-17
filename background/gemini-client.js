@@ -220,6 +220,20 @@ export async function analyzeTabsWithGemini(events, apiKey) {
 
         if (!response.ok) {
             const errorText = await response.text();
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch {
+                errorData = { error: { message: errorText } };
+            }
+            
+            // Handle quota errors with helpful message
+            if (response.status === 429) {
+                const retryDelay = errorData.error?.details?.find(d => d['@type']?.includes('RetryInfo'))?.retryDelay;
+                const message = errorData.error?.message || 'Quota exceeded';
+                throw new Error(`API quota exceeded (429). ${retryDelay ? `Retry in ${retryDelay}` : 'Please check your API quota limits.'} - ${message}`);
+            }
+            
             throw new Error(`API error: ${response.status} ${errorText}`);
         }
 

@@ -551,7 +551,8 @@ async function onRunClustering() {
     await new Promise((r) => setTimeout(r, 500));
 
     try {
-        const response = await chrome.runtime.sendMessage({ action: 'runClustering' });
+        // Use AI clustering instead of old heuristic clustering
+        const response = await chrome.runtime.sendMessage({ action: 'runAIClustering' });
 
         hide($loadingState);
 

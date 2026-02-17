@@ -136,22 +136,38 @@ export async function runAIClustering(force = false) {
     let tabsAnalyzed = 0;
 
     try {
-        const apiKey = await getAIApiKey();
+        let apiKey = await getAIApiKey();
         
-        // For MVP, use hardcoded API key if not in storage
-        // TODO: Add UI for API key input
-        const key = apiKey || 'YOUR_API_KEY_HERE'; // Replace with actual key for MVP
+        // For MVP: If no key in storage, you can hardcode it here temporarily
+        // TODO: Add UI for API key input in settings
+        // Get your API key from: https://aistudio.google.com/app/apikey
+        if (!apiKey) {
+            // ⚠️ TEMPORARY: Uncomment and add your API key here for testing:
+            // apiKey = 'YOUR_ACTUAL_API_KEY_HERE';
+            apiKey = 'AIzaSyDHNI1rFi77stLlgvK2tYxB9wH1CfeJ0kI'; // Set to null to skip AI and use heuristics
+        }
         
-        if (key && key !== 'YOUR_API_KEY_HERE') {
-            aiProjects = await analyzeTabsWithGemini(eventsForAnalysis, key);
+        if (apiKey && apiKey !== 'YOUR_API_KEY_HERE' && apiKey.length > 20) {
+            console.log('[AI Clustering] Using API key, calling Gemini...', { tabCount: eventsForAnalysis.length });
+            aiProjects = await analyzeTabsWithGemini(eventsForAnalysis, apiKey);
             source = 'ai';
             tabsAnalyzed = eventsForAnalysis.length;
-            console.log(`[AI Clustering] AI analysis complete: ${aiProjects.length} projects`);
+            console.log(`[AI Clustering] ✅ AI analysis complete: ${aiProjects.length} projects`);
         } else {
-            throw new Error('No API key configured');
+            console.warn('[AI Clustering] ⚠️ No valid API key - using heuristics. To enable AI:');
+            console.warn('  1. Get key from: https://aistudio.google.com/app/apikey');
+            console.warn('  2. Run in console: chrome.storage.local.set({ai_api_key: "your-key"})');
+            console.warn('  3. Or hardcode in ai-clustering.js line ~142');
+            throw new Error('No valid API key configured');
         }
     } catch (error) {
-        console.warn('[AI Clustering] AI failed, falling back to heuristics:', error.message);
+        const isQuotaError = error.message.includes('429') || error.message.includes('quota');
+        if (isQuotaError) {
+            console.warn('[AI Clustering] ⚠️ API quota exceeded, falling back to heuristics:', error.message);
+            console.warn('[AI Clustering] 💡 To fix: Check quota at https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas');
+        } else {
+            console.warn('[AI Clustering] AI failed, falling back to heuristics:', error.message);
+        }
         
         // Fallback to heuristic clustering
         // Note: runClustering() handles its own filtering, but we still want to exclude pinned
