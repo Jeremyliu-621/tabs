@@ -144,6 +144,27 @@
     </div>
   </div>
 
+  <!-- Edit project modal -->
+  <div class="modal-overlay hidden" id="edit-modal">
+    <div class="modal modal-large">
+      <h2 class="modal-title">Edit Project</h2>
+      <div class="edit-modal-content">
+        <div class="edit-section">
+          <label class="edit-label">Project Name</label>
+          <input type="text" class="modal-input" id="edit-project-name-input" placeholder="Project name" />
+        </div>
+        <div class="edit-section">
+          <label class="edit-label">Branches (Domains)</label>
+          <div class="edit-branches" id="edit-branches-list"></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="edit-modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="edit-modal-save">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
   <script src="popup.js" type="module"></script>
 </body>
 

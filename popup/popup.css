@@ -260,6 +260,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  user-select: none;
   font-size: 10px;
   color: var(--color-text-secondary);
   transition: transform 0.2s ease;
@@ -386,6 +388,15 @@ body {
 .branch-tabs {
   padding-left: var(--space-base);
   margin-top: 2px;
+}
+
+.branch-tabs--multi-column {
+  column-count: 2;
+  column-gap: var(--space-md);
+}
+
+.branch-tabs--multi-column .branch-tab {
+  break-inside: avoid;
 }
 
 .branch-tab {
@@ -525,6 +536,117 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-sm);
+}
+
+/* Edit modal styles */
+.modal-large {
+  width: 600px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.edit-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.edit-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.edit-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.edit-branches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-base);
+  max-height: 400px;
+  overflow-y: auto;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-secondary, rgba(0, 0, 0, 0.02));
+}
+
+.edit-branch-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.edit-branch-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.edit-branch-checkbox {
+  margin-right: var(--space-xs);
+  cursor: pointer;
+}
+
+.edit-branch-label {
+  cursor: pointer;
+  user-select: none;
+  flex: 1;
+}
+
+.edit-tabs-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-left: var(--space-lg);
+  margin-top: var(--space-xs);
+}
+
+.edit-tab-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.edit-tab-checkbox {
+  margin-right: var(--space-xs);
+  cursor: pointer;
+}
+
+.edit-tab-label {
+  cursor: pointer;
+  user-select: none;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-tab-checkbox:disabled + .edit-tab-label {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.edit-no-branches,
+.edit-no-tabs {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  padding: var(--space-sm);
+  text-align: center;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -998,6 +1120,47 @@ body {
 
 .project-card--archived:hover {
   opacity: 0.85;
+}
+
+/* Edit mode styles */
+.project-card.editing {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(var(--color-accent-rgb, 100, 100, 200), 0.2);
+  background: var(--color-surface-secondary, rgba(0, 0, 0, 0.02));
+}
+
+.project-name-edit-inline {
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  width: 100%;
+  max-width: 300px;
+  outline: none;
+  background: var(--color-surface);
+}
+
+.branch-edit-checkbox,
+.tab-edit-checkbox {
+  margin-right: 6px;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+.tab-edit-checkbox {
+  margin-right: 4px;
+}
+
+.branch-edit-checkbox:disabled + .branch-name,
+.tab-edit-checkbox:disabled + .branch-tab-link {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-save-inline {
+  margin-right: var(--space-sm);
 }
 
 /* ── Settings panel scrollbar ──────────────────────────────── */

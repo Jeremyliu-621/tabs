@@ -339,11 +339,11 @@ function renderProjects(projects) {
         // Project changed or doesn't exist - create/update card
         if (existingCard) {
             // Update existing card in place
-            const newCard = createProjectCard(project);
+            const newCard = createProjectCard(project, false, projects.length);
             existingCard.replaceWith(newCard);
         } else {
             // Create new card and append
-            const card = createProjectCard(project);
+            const card = createProjectCard(project, false, projects.length);
             list.appendChild(card);
         }
         
@@ -385,10 +385,12 @@ function renderProjects(projects) {
     }
 }
 
-function createProjectCard(project, isArchived = false) {
+function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
     const card = document.createElement('div');
     card.className = `project-card${isArchived ? ' project-card--archived' : ''}`;
     card.dataset.projectId = project.id;
+    // Store project data for editing
+    card._projectData = project;
 
     // ── Header row
     const header = document.createElement('div');
@@ -438,7 +440,7 @@ function createProjectCard(project, isArchived = false) {
         });
         editBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            editProjectName(project);
+            toggleEditMode(card, project);
         });
         nameEl.parentNode.insertBefore(editBtn, nameEl.nextSibling);
     }
@@ -450,9 +452,23 @@ function createProjectCard(project, isArchived = false) {
     }
 
     header.addEventListener('click', (e) => {
+        // Always ignore these elements
         if (e.target.closest('.project-star')) return;
         if (e.target.closest('.project-name-edit')) return;
         if (e.target.closest('.project-edit-btn')) return;
+        if (e.target.closest('.project-name-edit-inline')) return;
+        if (e.target.closest('.project-meta')) return;
+        
+        // In edit mode, only allow toggling when clicking the expand arrow
+        const isEditing = card.classList.contains('editing');
+        if (isEditing) {
+            // Check if click is directly on the expand arrow
+            const expandArrow = header.querySelector('.project-expand');
+            if (e.target !== expandArrow && !expandArrow.contains(e.target)) {
+                return; // Only allow toggling via the arrow in edit mode
+            }
+        }
+        
         card.classList.toggle('expanded');
 
         // Persist expanded state
@@ -507,6 +523,10 @@ function createProjectCard(project, isArchived = false) {
             const tabList = document.createElement('div');
             tabList.className = 'branch-tabs';
             tabList.style.cssText = 'padding-left: 0;'; // Remove left padding since no branch header
+            // If there's only one project, allow tabs to use multiple columns
+            if (totalProjectCount === 1) {
+                tabList.classList.add('branch-tabs--multi-column');
+            }
 
             // Deduplicate tabs by title
             const seenTitles = new Set();
@@ -548,7 +568,7 @@ function createProjectCard(project, isArchived = false) {
             for (let i = 0; i < project.branches.length; i++) {
                 const branch = project.branches[i];
                 const isLast = i === project.branches.length - 1;
-                const branchEl = createBranchElement(branch, isLast);
+                const branchEl = createBranchElement(branch, isLast, totalProjectCount);
                 grid.appendChild(branchEl);
             }
 
@@ -674,7 +694,7 @@ function normalizeForComparison(str) {
     return str.toLowerCase().trim().replace(/[^\w.]/g, '');
 }
 
-function createBranchElement(branch, isLast) {
+function createBranchElement(branch, isLast, totalProjectCount = 1) {
     const wrapper = document.createElement('div');
     wrapper.className = 'branch-item';
 
@@ -708,6 +728,10 @@ function createBranchElement(branch, isLast) {
     if (branch.tabs && branch.tabs.length > 0) {
         const tabList = document.createElement('div');
         tabList.className = 'branch-tabs';
+        // If there's only one project, allow tabs to use multiple columns
+        if (totalProjectCount === 1) {
+            tabList.classList.add('branch-tabs--multi-column');
+        }
 
         // Deduplicate tabs by title, keeping only the first occurrence
         const seenTitles = new Set();
@@ -878,58 +902,439 @@ function generateId() {
 // ── Manual Project Controls ──────────────────────────────────
 
 /**
- * Edit project name inline.
+ * Toggle edit mode for a project card.
  */
-async function editProjectName(project) {
-    const nameEl = document.querySelector(`[data-project-id="${project.id}"] .project-name`);
-    if (!nameEl) return;
+async function toggleEditMode(card, project) {
+    const isEditing = card.classList.contains('editing');
+    
+    // Prevent multiple rapid clicks
+    if (card._isEnteringEditMode) {
+        return;
+    }
+    
+    if (isEditing) {
+        // Exit edit mode and save
+        await exitEditMode(card, project);
+    } else {
+        // Enter edit mode
+        card._isEnteringEditMode = true;
+        await enterEditMode(card, project);
+        card._isEnteringEditMode = false;
+    }
+}
 
-    const originalName = project.name;
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'project-name-edit';
-    input.value = originalName;
-    input.style.cssText = `
-        font-family: inherit;
-        font-size: 0.95rem;
-        font-weight: 600;
-        border: 1px solid var(--color-accent);
-        border-radius: 4px;
-        padding: 2px 6px;
-        width: 100%;
-        outline: none;
-    `;
+/**
+ * Exit edit mode and save changes.
+ */
+async function exitEditMode(card, project) {
+    // Get project ID from card if project parameter is not available
+    const projectId = project?.id || card.dataset.projectId;
+    if (!projectId) {
+        console.error('[Popup] Cannot exit edit mode: no project ID');
+        return;
+    }
+    
+    // Save the edits first
+    await saveInlineEdits(card, project || card._projectData);
+    
+    // Remove editing class before re-rendering
+    card.classList.remove('editing');
+    
+    // Force re-render by clearing the hash for this project
+    renderedProjects.delete(projectId);
+    
+    // Re-render the card to show normal view (this will replace the card)
+    await loadData();
+}
 
-    const saveEdit = async () => {
-        const newName = input.value.trim();
-        if (newName && newName !== originalName) {
-            const allProjects = await getProjects();
-            const p = allProjects.find((x) => x.id === project.id);
-            if (p) {
-                p.name = newName;
-                await saveProjects(allProjects);
-                loadData();
-            }
+/**
+ * Enter edit mode for a project card.
+ */
+async function enterEditMode(card, project) {
+    // Prevent entering edit mode if already editing
+    if (card.classList.contains('editing')) {
+        return;
+    }
+    
+    card.classList.add('editing');
+    
+    // Load fresh project data
+    const allProjects = await getProjects();
+    const currentProject = allProjects.find((x) => x.id === project.id);
+    if (!currentProject) {
+        console.error('[Popup] Project not found for editing:', project.id);
+        return;
+    }
+
+    // Make project name editable
+    const nameEl = card.querySelector('.project-name');
+    if (nameEl && !nameEl.querySelector('input')) {
+        const originalName = currentProject.name;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'project-name-edit-inline';
+        input.value = originalName;
+        input.style.cssText = `
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border: 1px solid var(--color-accent);
+            border-radius: 4px;
+            padding: 2px 6px;
+            width: 100%;
+            max-width: 300px;
+            outline: none;
+            background: var(--color-surface);
+        `;
+        nameEl.textContent = '';
+        nameEl.appendChild(input);
+        input.focus();
+        input.select();
+    }
+
+    // Add checkboxes to branches and tabs
+    const branchContainer = card.querySelector('.project-branches');
+    if (branchContainer) {
+        addEditControlsToBranches(branchContainer, currentProject);
+    }
+
+    // Update edit button text
+    const editBtn = card.querySelector('.project-edit-btn');
+    if (editBtn) {
+        editBtn.textContent = '✓';
+        editBtn.title = 'Done editing';
+    }
+
+    // Replace all action buttons with just Save
+    const actions = card.querySelector('.project-actions');
+    if (actions) {
+        // Hide all existing buttons
+        const existingButtons = actions.querySelectorAll('.btn:not(.btn-save-inline)');
+        existingButtons.forEach(btn => {
+            btn.style.display = 'none';
+            btn.dataset.wasVisible = 'true';
+        });
+        
+        // Add or show save button
+        let saveBtn = actions.querySelector('.btn-save-inline');
+        if (!saveBtn) {
+            saveBtn = document.createElement('button');
+            saveBtn.className = 'btn btn-primary btn-save-inline';
+            saveBtn.textContent = 'Save';
+            saveBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await exitEditMode(card, currentProject);
+            });
+            actions.appendChild(saveBtn);
         } else {
-            nameEl.textContent = originalName;
+            saveBtn.style.display = '';
         }
-    };
+    }
+}
 
-    input.addEventListener('blur', saveEdit);
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            input.blur();
-        } else if (e.key === 'Escape') {
-            nameEl.textContent = originalName;
-            input.remove();
+/**
+ * Add edit controls (checkboxes) to branches and tabs.
+ */
+function addEditControlsToBranches(branchContainer, project) {
+    // Remove any existing edit checkboxes first to prevent duplicates
+    branchContainer.querySelectorAll('.branch-edit-checkbox, .tab-edit-checkbox').forEach(cb => cb.remove());
+    
+    // Check if we have the normal branch structure or the skipped branch display
+    const branchItems = branchContainer.querySelectorAll('.branch-item');
+    const directTabList = branchContainer.querySelector('.branch-tabs:not(.branch-tabs--multi-column)');
+    
+    if (branchItems.length > 0) {
+        // Normal branch structure
+        branchItems.forEach((branchItem, index) => {
+            const branch = project.branches[index];
+            if (!branch) return;
+
+            // Add checkbox to branch name
+            const branchNameEl = branchItem.querySelector('.branch-name');
+            if (branchNameEl) {
+                // Get the original text before modifying
+                const originalText = branchNameEl.textContent;
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'branch-edit-checkbox';
+                checkbox.checked = true;
+                checkbox.dataset.branchId = branch.id || branch.domain;
+                checkbox.style.cssText = 'margin-right: 6px; cursor: pointer;';
+                
+                // Stop checkbox clicks from propagating to branch name
+                checkbox.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+                
+                // Override the branch name click handler to only toggle checkbox in edit mode
+                // Remove the original click listener by cloning and replacing
+                const newBranchName = branchNameEl.cloneNode(false);
+                newBranchName.className = branchNameEl.className;
+                newBranchName.title = branchNameEl.title;
+                
+                // Add checkbox and text to the new element
+                newBranchName.appendChild(checkbox);
+                newBranchName.appendChild(document.createTextNode(originalText));
+                
+                branchNameEl.parentNode.replaceChild(newBranchName, branchNameEl);
+                
+                // Add new click handler that only toggles checkbox (doesn't open website)
+                newBranchName.style.cursor = 'pointer';
+                newBranchName.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                });
+
+                // When branch checkbox changes, enable/disable tab checkboxes
+                checkbox.addEventListener('change', () => {
+                    const tabCheckboxes = branchItem.querySelectorAll('.tab-edit-checkbox');
+                    tabCheckboxes.forEach((cb) => {
+                        cb.disabled = !checkbox.checked;
+                    });
+                });
+            }
+
+        // Add checkboxes to tabs
+        const tabLinks = branchItem.querySelectorAll('.branch-tab-link');
+        
+        // Create a map of tab titles to actual tabs (matching the deduplication logic)
+        const tabMap = new Map();
+        branch.tabs.forEach(tab => {
+            if (!tabMap.has(tab.title)) {
+                tabMap.set(tab.title, tab);
+            }
+        });
+        
+        tabLinks.forEach((tabLink) => {
+            if (tabLink.textContent.startsWith('+')) return; // Skip "more" indicator
+            
+            // Find the tab by matching title
+            const tabTitle = tabLink.textContent.trim();
+            const tab = tabMap.get(tabTitle);
+            if (!tab) return;
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'tab-edit-checkbox';
+            checkbox.checked = true;
+            checkbox.dataset.tabUrl = tab.url;
+            checkbox.style.cssText = 'margin-right: 4px; cursor: pointer;';
+            
+            // Insert checkbox before tab link
+            const tabItem = tabLink.closest('.branch-tab');
+            if (tabItem) {
+                tabItem.insertBefore(checkbox, tabLink);
+                
+                // Make tab clickable to toggle checkbox
+                tabLink.style.cursor = 'pointer';
+                tabLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                    }
+                });
+            }
+        });
+        });
+    } else if (directTabList && project.branches && project.branches.length === 1) {
+        // Skipped branch display - single branch with tabs shown directly
+        const branch = project.branches[0];
+        const tabLinks = directTabList.querySelectorAll('.branch-tab-link');
+        
+        // Create a map of displayed tab titles to actual tabs
+        const tabMap = new Map();
+        branch.tabs.forEach(tab => {
+            if (!tabMap.has(tab.title)) {
+                tabMap.set(tab.title, tab);
+            }
+        });
+        
+        tabLinks.forEach((tabLink) => {
+            if (tabLink.textContent.startsWith('+')) return; // Skip "more" indicator
+            
+            // Find the tab by matching title
+            const tabTitle = tabLink.textContent.trim();
+            const tab = tabMap.get(tabTitle);
+            if (!tab) return;
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'tab-edit-checkbox';
+            checkbox.checked = true;
+            checkbox.dataset.tabUrl = tab.url;
+            checkbox.style.cssText = 'margin-right: 4px; cursor: pointer;';
+            
+            // Insert checkbox before tab link
+            const tabItem = tabLink.closest('.branch-tab');
+            if (tabItem) {
+                tabItem.insertBefore(checkbox, tabLink);
+                
+                // Make tab clickable to toggle checkbox
+                tabLink.style.cursor = 'pointer';
+                tabLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                    }
+                });
+            }
+        });
+    }
+}
+
+/**
+ * Save inline edits.
+ */
+async function saveInlineEdits(card, project) {
+    const allProjects = await getProjects();
+    const p = allProjects.find((x) => x.id === project.id);
+    if (!p) {
+        console.error('[Popup] Project not found for saving:', project.id);
+        return;
+    }
+
+    // Get edited project name
+    const nameInput = card.querySelector('.project-name-edit-inline');
+    if (nameInput && nameInput.value.trim()) {
+        p.name = nameInput.value.trim();
+    }
+
+    // Collect selected branches and tabs
+    const branchContainer = card.querySelector('.project-branches');
+    if (!branchContainer) return;
+
+    const branchItems = branchContainer.querySelectorAll('.branch-item');
+    const directTabList = branchContainer.querySelector('.branch-tabs:not(.branch-tabs--multi-column)');
+    const newBranches = [];
+
+    if (branchItems.length > 0) {
+        // Normal branch structure
+        branchItems.forEach((branchItem, index) => {
+            const branchCheckbox = branchItem.querySelector('.branch-edit-checkbox');
+            if (!branchCheckbox || !branchCheckbox.checked) {
+                return; // Skip unchecked branches
+            }
+
+            const branchId = branchCheckbox.dataset.branchId;
+            const originalBranch = project.branches.find(
+                (b) => (b.id && b.id === branchId) || b.domain === branchId
+            );
+            
+            if (!originalBranch) return;
+
+            // Collect selected tabs
+            const tabCheckboxes = branchItem.querySelectorAll('.tab-edit-checkbox:checked');
+            const selectedTabs = [];
+            
+            tabCheckboxes.forEach((tabCheckbox) => {
+                const tabUrl = tabCheckbox.dataset.tabUrl;
+                const originalTab = originalBranch.tabs.find((t) => t.url === tabUrl);
+                if (originalTab) {
+                    selectedTabs.push(originalTab);
+                }
+            });
+
+            // Only include branch if it has at least one tab
+            if (selectedTabs.length > 0) {
+                newBranches.push({
+                    ...originalBranch,
+                    tabs: selectedTabs,
+                });
+            }
+        });
+    } else if (directTabList && project.branches && project.branches.length === 1) {
+        // Skipped branch display - single branch with tabs shown directly
+        const branch = project.branches[0];
+        const tabCheckboxes = directTabList.querySelectorAll('.tab-edit-checkbox:checked');
+        const selectedTabs = [];
+        
+        tabCheckboxes.forEach((tabCheckbox) => {
+            const tabUrl = tabCheckbox.dataset.tabUrl;
+            const originalTab = branch.tabs.find((t) => t.url === tabUrl);
+            if (originalTab) {
+                selectedTabs.push(originalTab);
+            }
+        });
+
+        // Only include branch if it has at least one tab
+        if (selectedTabs.length > 0) {
+            newBranches.push({
+                ...branch,
+                tabs: selectedTabs,
+            });
         }
-    });
+    }
 
-    nameEl.textContent = '';
-    nameEl.appendChild(input);
-    input.focus();
-    input.select();
+    // Update project branches
+    p.branches = newBranches;
+
+    // Save changes
+    await saveProjects(allProjects);
+}
+
+/**
+ * Save edited project data.
+ */
+async function saveProjectEdits(project, newName, branchesList) {
+    const allProjects = await getProjects();
+    const p = allProjects.find((x) => x.id === project.id);
+    if (!p) {
+        console.error('[Popup] Project not found for saving:', project.id);
+        return;
+    }
+
+    // Update project name
+    if (newName && newName.trim()) {
+        p.name = newName.trim();
+    }
+
+    // Collect selected branches and tabs
+    const branchItems = branchesList.querySelectorAll('.edit-branch-item');
+    const newBranches = [];
+
+    for (const branchItem of branchItems) {
+        const branchCheckbox = branchItem.querySelector('.edit-branch-checkbox');
+        if (!branchCheckbox || !branchCheckbox.checked) {
+            continue; // Skip unchecked branches
+        }
+
+        const branchId = branchCheckbox.dataset.branchId;
+        const originalBranch = project.branches.find(
+            (b) => (b.id && b.id === branchId) || b.domain === branchId
+        );
+        
+        if (!originalBranch) continue;
+
+        // Collect selected tabs
+        const tabCheckboxes = branchItem.querySelectorAll('.edit-tab-checkbox:checked');
+        const selectedTabs = [];
+        
+        for (const tabCheckbox of tabCheckboxes) {
+            const tabUrl = tabCheckbox.dataset.tabUrl;
+            const originalTab = originalBranch.tabs.find((t) => t.url === tabUrl);
+            if (originalTab) {
+                selectedTabs.push(originalTab);
+            }
+        }
+
+        // Only include branch if it has at least one tab
+        if (selectedTabs.length > 0) {
+            newBranches.push({
+                ...originalBranch,
+                tabs: selectedTabs,
+            });
+        }
+    }
+
+    // Update project branches
+    p.branches = newBranches;
+
+    // Save changes
+    await saveProjects(allProjects);
 }
 
 // ══════════════════════════════════════════════════════════════
