@@ -411,6 +411,37 @@ function createProjectCard(project, isArchived = false) {
               title="Star project">${project.starred ? '★' : '☆'}</button>
     </div>
   `;
+    
+    // Add edit button next to project name (only for non-archived projects)
+    if (!isArchived) {
+        const nameEl = header.querySelector('.project-name');
+        const editBtn = document.createElement('button');
+        editBtn.className = 'project-edit-btn';
+        editBtn.textContent = '✎';
+        editBtn.title = 'Edit project name';
+        editBtn.style.cssText = `
+            background: none;
+            border: none;
+            color: var(--color-text-secondary, #666);
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 2px 4px;
+            margin-left: 4px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        `;
+        editBtn.addEventListener('mouseenter', () => {
+            editBtn.style.opacity = '1';
+        });
+        editBtn.addEventListener('mouseleave', () => {
+            editBtn.style.opacity = '0.6';
+        });
+        editBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            editProjectName(project);
+        });
+        nameEl.parentNode.insertBefore(editBtn, nameEl.nextSibling);
+    }
 
     // Restore expanded state from localStorage
     const expandedIds = JSON.parse(localStorage.getItem('tabs_expanded_projects') || '[]');
@@ -421,6 +452,7 @@ function createProjectCard(project, isArchived = false) {
     header.addEventListener('click', (e) => {
         if (e.target.closest('.project-star')) return;
         if (e.target.closest('.project-name-edit')) return;
+        if (e.target.closest('.project-edit-btn')) return;
         card.classList.toggle('expanded');
 
         // Persist expanded state
@@ -592,37 +624,8 @@ function createProjectCard(project, isArchived = false) {
             deleteProject(project.id);
         });
 
-        // Pin button
-        const pinBtn = document.createElement('button');
-        pinBtn.className = `btn btn-secondary project-pin ${project.pinned ? 'pinned' : ''}`;
-        pinBtn.textContent = project.pinned ? '📌 Pinned' : 'Pin';
-        pinBtn.title = project.pinned ? 'Unpin project (include in AI analysis)' : 'Pin project (exclude from AI analysis)';
-        pinBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const allProjects = await getProjects();
-            const p = allProjects.find((x) => x.id === project.id);
-            if (p) {
-                p.pinned = !p.pinned;
-                await saveProjects(allProjects);
-                project.pinned = p.pinned;
-                pinBtn.textContent = p.pinned ? '📌 Pinned' : 'Pin';
-                pinBtn.classList.toggle('pinned', p.pinned);
-            }
-        });
-
-        // Edit name button
-        const editBtn = document.createElement('button');
-        editBtn.className = 'btn btn-secondary';
-        editBtn.textContent = 'Edit';
-        editBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            editProjectName(project);
-        });
-
         actions.appendChild(switchBtn);
         actions.appendChild(openBtn);
-        actions.appendChild(pinBtn);
-        actions.appendChild(editBtn);
         actions.appendChild(deleteBtn);
     }
 
