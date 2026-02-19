@@ -443,6 +443,19 @@ body {
   flex: 1;
 }
 
+/* Add visual separation between button groups */
+/* Add margin after the last main branch button */
+.project-actions .btn-main-branch:last-of-type {
+  margin-right: var(--space-sm);
+}
+
+/* Add margin and border before the first sub-branch button */
+.project-actions .btn-sub-branch:first-of-type {
+  margin-left: var(--space-sm);
+  border-left: 2px solid var(--color-border);
+  padding-left: calc(var(--space-md) + var(--space-sm));
+}
+
 .btn {
   font-family: inherit;
   font-size: 0.7rem;

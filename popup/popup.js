@@ -614,10 +614,11 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         actions.appendChild(restoreBtn);
         actions.appendChild(deleteBtn);
     } else {
-        // Active projects get Switch, Open, Delete buttons
+        // Active projects get Switch, Open, Delete buttons + sub-branch buttons
+        // Group 1: Main branch buttons (black background, white text)
         const switchBtn = document.createElement('button');
-        switchBtn.className = 'btn btn-primary';
-        switchBtn.textContent = 'Switch to project';
+        switchBtn.className = 'btn btn-primary btn-main-branch';
+        switchBtn.textContent = 'Switch';
         switchBtn.addEventListener('click', () => {
             const allUrls = getAllProjectUrls(project);
             if (allUrls.length > 0) {
@@ -627,10 +628,32 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         });
 
         const openBtn = document.createElement('button');
-        openBtn.className = 'btn btn-secondary';
-        openBtn.textContent = 'Open project';
+        openBtn.className = 'btn btn-primary btn-main-branch';
+        openBtn.textContent = 'Open';
         openBtn.addEventListener('click', () => {
             const allUrls = getAllProjectUrls(project);
+            if (allUrls.length > 0) {
+                chrome.runtime.sendMessage({ action: 'openProjectWindow', urls: allUrls });
+            }
+        });
+
+        // Group 2: Sub-branch buttons (white background, black text)
+        const switchAllBtn = document.createElement('button');
+        switchAllBtn.className = 'btn btn-secondary btn-sub-branch';
+        switchAllBtn.textContent = 'Switch';
+        switchAllBtn.addEventListener('click', () => {
+            const allUrls = getAllProjectUrlsWithSubBranches(project);
+            if (allUrls.length > 0) {
+                chrome.runtime.sendMessage({ action: 'switchToProject', urls: allUrls });
+                window.close();
+            }
+        });
+
+        const openAllBtn = document.createElement('button');
+        openAllBtn.className = 'btn btn-secondary btn-sub-branch';
+        openAllBtn.textContent = 'Open';
+        openAllBtn.addEventListener('click', () => {
+            const allUrls = getAllProjectUrlsWithSubBranches(project);
             if (allUrls.length > 0) {
                 chrome.runtime.sendMessage({ action: 'openProjectWindow', urls: allUrls });
             }
@@ -646,6 +669,8 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
 
         actions.appendChild(switchBtn);
         actions.appendChild(openBtn);
+        actions.appendChild(switchAllBtn);
+        actions.appendChild(openAllBtn);
         actions.appendChild(deleteBtn);
     }
 
@@ -779,6 +804,23 @@ function getAllProjectUrls(project) {
             // This prevents opening 50+ tabs if a branch has many subpages
             if (b.tabs && b.tabs.length > 0 && b.tabs[0].url) {
                 urls.push(b.tabs[0].url);
+            }
+        }
+    }
+    return urls;
+}
+
+function getAllProjectUrlsWithSubBranches(project) {
+    const urls = [];
+    if (project.branches) {
+        for (const b of project.branches) {
+            // Get ALL tabs from each branch (including sub-branches)
+            if (b.tabs && b.tabs.length > 0) {
+                for (const tab of b.tabs) {
+                    if (tab.url) {
+                        urls.push(tab.url);
+                    }
+                }
             }
         }
     }
