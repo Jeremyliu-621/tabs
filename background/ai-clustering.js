@@ -387,10 +387,10 @@ export async function runAIClustering(force = false) {
         if (!apiKey) {
             // ⚠️ TEMPORARY: Uncomment and add your API key here for testing:
             // apiKey = 'YOUR_ACTUAL_API_KEY_HERE';
-            apiKey = 'AIzaSyDHNI1rFi77stLlgvK2tYxB9wH1CfeJ0kI'; // Set to null to skip AI and use heuristics
+            apiKey = 'AIzaSyC8vH9uv_l_CsJnz1ih_69dR9jkd1Po6Gs'; // Gemini Flash Lite 2.0 - Set to null to skip AI and use heuristics
         }
         
-        if (apiKey && apiKey !== 'YOUR_API_KEY_HERE' && apiKey.length > 20) {
+        if (apiKey && apiKey.length > 20) {
             console.log('[AI Clustering] Using API key, calling Gemini...', { tabCount: eventsForAnalysis.length });
             aiProjects = await analyzeTabsWithGemini(eventsForAnalysis, apiKey);
             source = 'ai';
@@ -400,7 +400,7 @@ export async function runAIClustering(force = false) {
             console.warn('[AI Clustering] ⚠️ No valid API key - using heuristics. To enable AI:');
             console.warn('  1. Get key from: https://aistudio.google.com/app/apikey');
             console.warn('  2. Run in console: chrome.storage.local.set({ai_api_key: "your-key"})');
-            console.warn('  3. Or hardcode in ai-clustering.js line ~142');
+            console.warn('  3. Or hardcode in ai-clustering.js line ~390');
             throw new Error('No valid API key configured');
         }
     } catch (error) {
