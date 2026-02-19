@@ -1,4 +1,9 @@
 import { AI } from '../shared/constants.js';
+import {
+    hasProjectChanges,
+    mergeProjects,
+    filterPinnedProjectsFromEvents,
+} from '../shared/project-utils.js';
 import { analyzeTabsWithGemini } from './gemini-client.js';
 import { runClustering } from './clustering.js';
 import {
@@ -52,297 +57,6 @@ async function getCurrentTabCount() {
 }
 
 /**
- * Check if there are meaningful changes between existing and new projects.
- * Ignores timestamp-only updates.
- */
-function hasProjectChanges(existingProjects, newProjects) {
-    // Quick check: different counts mean changes
-    if (existingProjects.length !== newProjects.length) {
-        return true;
-    }
-    
-    // Build maps for comparison
-    const existingMap = new Map(existingProjects.map(p => [p.id, p]));
-    const newMap = new Map(newProjects.map(p => [p.id, p]));
-    
-    // Check if any project IDs changed (new/removed projects)
-    const existingIds = new Set(existingProjects.map(p => p.id));
-    const newIds = new Set(newProjects.map(p => p.id));
-    
-    if (existingIds.size !== newIds.size) {
-        return true;
-    }
-    
-    for (const id of existingIds) {
-        if (!newIds.has(id)) {
-            return true; // Project removed
-        }
-    }
-    
-    for (const id of newIds) {
-        if (!existingIds.has(id)) {
-            return true; // New project added
-        }
-    }
-    
-    // Compare project content (excluding timestamps)
-    for (const [id, newProject] of newMap) {
-        const existing = existingMap.get(id);
-        if (!existing) continue;
-        
-        // Compare meaningful properties
-        if (existing.name !== newProject.name) return true;
-        if (existing.starred !== newProject.starred) return true;
-        if (existing.archived !== newProject.archived) return true;
-        if (existing.pinned !== newProject.pinned) return true;
-        
-        // Compare branches structure
-        const existingBranches = existing.branches || [];
-        const newBranches = newProject.branches || [];
-        
-        if (existingBranches.length !== newBranches.length) return true;
-        
-        // Compare branch domains and tab counts
-        const existingBranchInfo = existingBranches.map(b => `${b.domain}:${b.tabs?.length || 0}`).sort().join('|');
-        const newBranchInfo = newBranches.map(b => `${b.domain}:${b.tabs?.length || 0}`).sort().join('|');
-        
-        if (existingBranchInfo !== newBranchInfo) return true;
-    }
-    
-    // No meaningful changes detected
-    return false;
-}
-
-/**
- * Normalize project name for fuzzy matching.
- * Removes common variations, extra spaces, and special characters.
- */
-function normalizeProjectName(name) {
-    if (!name) return '';
-    return name
-        .toLowerCase()
-        .trim()
-        .replace(/\s+/g, ' ') // Normalize whitespace
-        .replace(/[^\w\s-]/g, '') // Remove special chars except hyphens
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-/**
- * Calculate fuzzy name similarity (0-1).
- * Returns 1 for exact match, high score for similar names.
- */
-function nameSimilarity(name1, name2) {
-    const n1 = normalizeProjectName(name1);
-    const n2 = normalizeProjectName(name2);
-    
-    if (n1 === n2) return 1.0;
-    
-    // Check if one contains the other
-    if (n1.includes(n2) || n2.includes(n1)) {
-        const shorter = Math.min(n1.length, n2.length);
-        const longer = Math.max(n1.length, n2.length);
-        return shorter / longer; // Partial match score
-    }
-    
-    // Simple word overlap
-    const words1 = new Set(n1.split(/\s+/).filter(w => w.length > 2));
-    const words2 = new Set(n2.split(/\s+/).filter(w => w.length > 2));
-    if (words1.size === 0 || words2.size === 0) return 0;
-    
-    let overlap = 0;
-    for (const word of words1) {
-        if (words2.has(word)) overlap++;
-    }
-    
-    return overlap / Math.max(words1.size, words2.size);
-}
-
-/**
- * Get primary domain from project (first/most common domain).
- */
-function getPrimaryDomain(project) {
-    if (!project.branches || project.branches.length === 0) return null;
-    // Primary domain is the first branch (sorted by tab count)
-    return project.branches[0]?.domain || null;
-}
-
-/**
- * Calculate URL overlap between two projects.
- */
-function calculateUrlOverlap(project1, project2) {
-    const urls1 = new Set();
-    const urls2 = new Set();
-    
-    if (project1.branches) {
-        for (const branch of project1.branches) {
-            if (branch.tabs) {
-                for (const tab of branch.tabs) {
-                    if (tab.url) urls1.add(tab.url);
-                }
-            }
-        }
-    }
-    
-    if (project2.branches) {
-        for (const branch of project2.branches) {
-            if (branch.tabs) {
-                for (const tab of branch.tabs) {
-                    if (tab.url) urls2.add(tab.url);
-                }
-            }
-        }
-    }
-    
-    if (urls1.size === 0 || urls2.size === 0) return 0;
-    
-    let overlap = 0;
-    for (const url of urls1) {
-        if (urls2.has(url)) overlap++;
-    }
-    
-    return overlap / Math.max(urls1.size, urls2.size);
-}
-
-/**
- * Merge AI/heuristic projects with manual and pinned projects.
- * Preserves manual projects and pinned projects.
- * Attempts to preserve IDs for similar projects to prevent UI flicker.
- */
-function mergeProjects(aiProjects, existingProjects) {
-    // Separate manual, pinned, and auto-detected projects
-    const manualProjects = existingProjects.filter((p) => !p.autoDetected);
-    const pinnedProjects = existingProjects.filter((p) => p.pinned);
-    const autoDetectedProjects = existingProjects.filter((p) => p.autoDetected && !p.pinned);
-
-    // Build index of existing projects for matching
-    // Index by normalized name for fast lookup
-    const existingProjectsByName = new Map();
-    // Also index by primary domain as fallback
-    const existingProjectsByDomain = new Map();
-    
-    for (const p of autoDetectedProjects) {
-        const normalizedName = normalizeProjectName(p.name);
-        if (!existingProjectsByName.has(normalizedName)) {
-            existingProjectsByName.set(normalizedName, []);
-        }
-        existingProjectsByName.get(normalizedName).push(p);
-        
-        const primaryDomain = getPrimaryDomain(p);
-        if (primaryDomain) {
-            if (!existingProjectsByDomain.has(primaryDomain)) {
-                existingProjectsByDomain.set(primaryDomain, []);
-            }
-            existingProjectsByDomain.get(primaryDomain).push(p);
-        }
-    }
-
-    // Assign IDs to new AI projects, preserving if similar project exists
-    const aiProjectsWithIds = aiProjects.map((newProject) => {
-        // Strategy 1: Match by exact normalized name
-        const normalizedName = normalizeProjectName(newProject.name);
-        const candidatesByName = existingProjectsByName.get(normalizedName) || [];
-        
-        // Strategy 2: Match by primary domain (fallback)
-        const primaryDomain = getPrimaryDomain(newProject);
-        const candidatesByDomain = primaryDomain ? (existingProjectsByDomain.get(primaryDomain) || []) : [];
-        
-        // Combine candidates (dedupe by ID)
-        const candidateMap = new Map();
-        for (const c of [...candidatesByName, ...candidatesByDomain]) {
-            candidateMap.set(c.id, c);
-        }
-        const allCandidates = Array.from(candidateMap.values());
-        
-        // Find best match by multiple criteria
-        let bestMatch = null;
-        let bestScore = 0;
-        
-        for (const existing of allCandidates) {
-            if (!existing.branches || existing.branches.length === 0) continue;
-            if (!newProject.branches || newProject.branches.length === 0) continue;
-            
-            // Calculate domain similarity
-            const existingDomains = new Set(existing.branches.map(b => b.domain));
-            const newDomains = new Set(newProject.branches.map(b => b.domain));
-            
-            let domainMatchCount = 0;
-            for (const domain of newDomains) {
-                if (existingDomains.has(domain)) domainMatchCount++;
-            }
-            
-            const domainScore = domainMatchCount / Math.max(existingDomains.size, newDomains.size, 1);
-            
-            // Calculate name similarity
-            const nameScore = nameSimilarity(existing.name, newProject.name);
-            
-            // Calculate URL overlap
-            const urlScore = calculateUrlOverlap(existing, newProject);
-            
-            // Combined score: prioritize domain overlap, then name, then URLs
-            // Lower threshold to 30% domain overlap for better matching
-            const combinedScore = (domainScore * 0.5) + (nameScore * 0.3) + (urlScore * 0.2);
-            
-            // Match if domain overlap >= 30% OR (name similarity >= 0.7 AND primary domain matches)
-            const primaryMatches = getPrimaryDomain(existing) === primaryDomain;
-            const meetsThreshold = domainScore >= 0.3 || (nameScore >= 0.7 && primaryMatches);
-            
-            if (meetsThreshold && combinedScore > bestScore) {
-                bestScore = combinedScore;
-                bestMatch = existing;
-            }
-        }
-        
-        // Preserve ID if we found a good match
-        if (bestMatch) {
-            return {
-                ...newProject,
-                id: bestMatch.id, // Preserve ID to prevent UI flicker
-                starred: bestMatch.starred, // Preserve starred status
-            };
-        }
-        
-        return newProject; // Keep new ID
-    });
-
-    // Combine: manual + pinned + new AI projects
-    const merged = [
-        ...manualProjects,
-        ...pinnedProjects,
-        ...aiProjectsWithIds,
-    ];
-
-    return merged;
-}
-
-/**
- * Filter out pinned projects from events before sending to AI.
- * Pinned projects should be excluded from analysis.
- */
-function filterPinnedProjectsFromEvents(events, existingProjects) {
-    const pinnedProjects = existingProjects.filter((p) => p.pinned);
-    const pinnedUrls = new Set();
-    
-    // Collect all URLs from pinned projects
-    for (const project of pinnedProjects) {
-        if (project.branches) {
-            for (const branch of project.branches) {
-                if (branch.tabs) {
-                    for (const tab of branch.tabs) {
-                        if (tab.url) {
-                            pinnedUrls.add(tab.url);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // Filter out events that match pinned project URLs
-    return events.filter((e) => !e.url || !pinnedUrls.has(e.url));
-}
-
-/**
  * Run AI clustering with fallback to heuristics.
  * @param {boolean} force - Force analysis even if triggers not met
  * @returns {Promise<Array>} Array of projects
@@ -381,14 +95,9 @@ export async function runAIClustering(force = false) {
     try {
         let apiKey = await getAIApiKey();
         
-        // For MVP: If no key in storage, you can hardcode it here temporarily
-        // TODO: Add UI for API key input in settings
-        // Get your API key from: https://aistudio.google.com/app/apikey
-        if (!apiKey) {
-            // ⚠️ TEMPORARY: Uncomment and add your API key here for testing:
-            // apiKey = 'YOUR_ACTUAL_API_KEY_HERE';
-            apiKey = 'AIzaSyC8vH9uv_l_CsJnz1ih_69dR9jkd1Po6Gs'; // Gemini Flash Lite 2.0 - Set to null to skip AI and use heuristics
-        }
+        // API key must be stored via Settings UI or console:
+        //   chrome.storage.local.set({ ai_api_key: 'YOUR_KEY' })
+        // Get a key from: https://aistudio.google.com/app/apikey
         
         if (apiKey && apiKey.length > 20) {
             console.log('[AI Clustering] Using API key, calling Gemini...', { tabCount: eventsForAnalysis.length });
@@ -412,9 +121,12 @@ export async function runAIClustering(force = false) {
             console.warn('[AI Clustering] AI failed, falling back to heuristics:', error.message);
         }
         
-        // Fallback to heuristic clustering
-        // Note: runClustering() handles its own filtering, but we still want to exclude pinned
-        aiProjects = (await runClustering()) || [];
+        // Fallback to heuristic clustering.
+        // runClustering() returns the full project set (including manual/pinned),
+        // but mergeProjects() re-adds manual/pinned from existingProjects.
+        // Only pass auto-detected projects to avoid duplicating manual ones.
+        const heuristicAll = (await runClustering()) || [];
+        aiProjects = heuristicAll.filter((p) => p.autoDetected);
         source = 'heuristic';
         tabsAnalyzed = eventsForAnalysis.length;
         

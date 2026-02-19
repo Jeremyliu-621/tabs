@@ -20,6 +20,7 @@ import {
     getTabEvents,
 } from '../background/storage.js';
 import { TRACKING, CLUSTERING } from '../shared/constants.js';
+import { formatTimeAgo, generateId } from '../shared/utils.js';
 import { getCachedProjects, shouldInvalidateCache } from '../background/cache.js';
 
 // ── Init ─────────────────────────────────────────────────────
@@ -112,6 +113,11 @@ async function processDeletionQueue() {
 }
 
 async function loadData() {
+    // Don't refresh while user is editing — it would destroy edit controls
+    if (document.querySelector('.project-card.editing')) {
+        return;
+    }
+
     // Prevent concurrent loads
     if (isLoadingData) {
         return;
@@ -951,10 +957,6 @@ function setupModal() {
     });
 }
 
-function generateId() {
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 // ── Manual Project Controls ──────────────────────────────────
 
 /**
@@ -1036,6 +1038,7 @@ async function enterEditMode(card, project) {
     const currentProject = allProjects.find((x) => x.id === project.id);
     if (!currentProject) {
         console.error('[Popup] Project not found for editing:', project.id);
+        card.classList.remove('editing');
         return;
     }
 
@@ -1123,9 +1126,12 @@ function addEditControlsToBranches(branchContainer, project) {
     // Remove any existing edit checkboxes first to prevent duplicates
     branchContainer.querySelectorAll('.branch-edit-checkbox, .tab-edit-checkbox').forEach(cb => cb.remove());
     
-    // Check if we have the normal branch structure or the skipped branch display
+    // Check if we have the normal branch structure or the skipped branch display.
+    // Use :scope > .branch-tabs to find a tab list that is a direct child of
+    // branchContainer (the "skipped branch" layout). In normal branch display,
+    // .branch-tabs elements are nested inside .branch-item > .branch-content.
     const branchItems = branchContainer.querySelectorAll('.branch-item');
-    const directTabList = branchContainer.querySelector('.branch-tabs:not(.branch-tabs--multi-column)');
+    const directTabList = branchContainer.querySelector(':scope > .branch-tabs');
     
     if (branchItems.length > 0) {
         // Normal branch structure
@@ -1308,7 +1314,7 @@ async function saveInlineEdits(card, project) {
     }
 
     const branchItems = branchContainer.querySelectorAll('.branch-item');
-    const directTabList = branchContainer.querySelector('.branch-tabs:not(.branch-tabs--multi-column)');
+    const directTabList = branchContainer.querySelector(':scope > .branch-tabs');
     const newBranches = [];
 
     if (branchItems.length > 0) {
@@ -1410,66 +1416,6 @@ async function saveInlineEdits(card, project) {
     }
 }
 
-/**
- * Save edited project data.
- */
-async function saveProjectEdits(project, newName, branchesList) {
-    const allProjects = await getProjects();
-    const p = allProjects.find((x) => x.id === project.id);
-    if (!p) {
-        console.error('[Popup] Project not found for saving:', project.id);
-        return;
-    }
-
-    // Update project name
-    if (newName && newName.trim()) {
-        p.name = newName.trim();
-    }
-
-    // Collect selected branches and tabs
-    const branchItems = branchesList.querySelectorAll('.edit-branch-item');
-    const newBranches = [];
-
-    for (const branchItem of branchItems) {
-        const branchCheckbox = branchItem.querySelector('.edit-branch-checkbox');
-        if (!branchCheckbox || !branchCheckbox.checked) {
-            continue; // Skip unchecked branches
-        }
-
-        const branchId = branchCheckbox.dataset.branchId;
-        const originalBranch = project.branches.find(
-            (b) => (b.id && b.id === branchId) || b.domain === branchId
-        );
-        
-        if (!originalBranch) continue;
-
-        // Collect selected tabs
-        const tabCheckboxes = branchItem.querySelectorAll('.edit-tab-checkbox:checked');
-        const selectedTabs = [];
-        
-        for (const tabCheckbox of tabCheckboxes) {
-            const tabUrl = tabCheckbox.dataset.tabUrl;
-            const originalTab = originalBranch.tabs.find((t) => t.url === tabUrl);
-            if (originalTab) {
-                selectedTabs.push(originalTab);
-            }
-        }
-
-        // Only include branch if it has at least one tab
-        if (selectedTabs.length > 0) {
-            newBranches.push({
-                ...originalBranch,
-                tabs: selectedTabs,
-            });
-        }
-    }
-
-    // Update project branches
-    p.branches = newBranches;
-
-    // Save changes
-    await saveProjects(allProjects);
-}
 
 // ══════════════════════════════════════════════════════════════
 // SETTINGS
@@ -1713,18 +1659,6 @@ function renderEventLog(events) {
 
 // ── Helpers ──────────────────────────────────────────────────
 
-function formatTimeAgo(timestamp) {
-    if (!timestamp) return '';
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 60) return 'just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes} min ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-    const days = Math.floor(hours / 24);
-    return `${days} day${days > 1 ? 's' : ''} ago`;
-}
-
 function formatTime(ts) {
     const d = new Date(ts);
     const now = new Date();
@@ -1732,11 +1666,6 @@ function formatTime(ts) {
     const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     if (isToday) return time;
     return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
-}
-
-function truncate(str, maxLen = 40) {
-    if (!str) return '';
-    return str.length <= maxLen ? str : str.slice(0, maxLen - 1) + '…';
 }
 
 function esc(str) {

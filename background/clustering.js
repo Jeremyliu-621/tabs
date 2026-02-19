@@ -1,4 +1,5 @@
-import { generateId } from '../shared/utils.js';
+import { generateId, buildSessions } from '../shared/utils.js';
+import { calculateJaccardSimilarity } from '../shared/project-utils.js';
 import {
     getTabEvents,
     getProjects,
@@ -97,52 +98,16 @@ export async function runClustering() {
 
 // ── Step 1: Filter recent events ─────────────────────────────
 
-function filterRecentEvents(events, retentionMs) {
+export function filterRecentEvents(events, retentionMs) {
     const cutoff = Date.now() - retentionMs;
     return events.filter((e) => e.timestamp >= cutoff);
 }
 
-// ── Step 2: Session detection ────────────────────────────────
-
-function buildSessions(events, sessionGap) {
-    const sorted = [...events]
-        .filter((e) => e.domain && e.timestamp)
-        .sort((a, b) => a.timestamp - b.timestamp);
-
-    if (sorted.length === 0) return [];
-
-    const sessions = [];
-    let current = {
-        start: sorted[0].timestamp,
-        end: sorted[0].timestamp,
-        events: [sorted[0]],
-        domains: new Set([sorted[0].domain]),
-    };
-
-    for (let i = 1; i < sorted.length; i++) {
-        const e = sorted[i];
-        if (e.timestamp - current.end > sessionGap) {
-            sessions.push(current);
-            current = {
-                start: e.timestamp,
-                end: e.timestamp,
-                events: [e],
-                domains: new Set([e.domain]),
-            };
-        } else {
-            current.end = e.timestamp;
-            current.events.push(e);
-            current.domains.add(e.domain);
-        }
-    }
-    sessions.push(current);
-
-    return sessions;
-}
+// ── Step 2: Session detection ── (see shared/utils.js buildSessions)
 
 // ── Step 3: Convert session → project candidate ──────────────
 
-function sessionToProject(session) {
+export function sessionToProject(session) {
     const domains = [...session.domains];
     const domainUrls = {};
 
@@ -194,7 +159,7 @@ function sessionToProject(session) {
  * Merge new session candidates into existing projects when domain
  * overlap exceeds the threshold. Domains CAN appear in multiple projects.
  */
-function deduplicateProjects(existing, newCandidates, overlapThreshold) {
+export function deduplicateProjects(existing, newCandidates, overlapThreshold) {
     // Deep clone existing to avoid mutating the originals
     const result = existing.map((p) => ({
         ...p,
@@ -248,7 +213,7 @@ function deduplicateProjects(existing, newCandidates, overlapThreshold) {
  * For matching domains, add new tabs (deduped by URL).
  * For new domains, add the entire branch.
  */
-function mergeBranches(target, source) {
+export function mergeBranches(target, source) {
     for (const newBranch of source.branches) {
         const existingBranch = target.branches.find(
             (b) => b.domain === newBranch.domain
@@ -271,24 +236,11 @@ function mergeBranches(target, source) {
     }
 }
 
-/**
- * Jaccard similarity: |A ∩ B| / |A ∪ B|
- */
-function calculateJaccardSimilarity(setA, setB) {
-    if (setA.size === 0 && setB.size === 0) return 1;
-
-    let intersectionSize = 0;
-    for (const item of setA) {
-        if (setB.has(item)) intersectionSize++;
-    }
-
-    const unionSize = setA.size + setB.size - intersectionSize;
-    return unionSize === 0 ? 0 : intersectionSize / unionSize;
-}
+// ── Step 5b: Jaccard similarity is in shared/project-utils.js
 
 // ── Step 6: Archive old projects ─────────────────────────────
 
-function markArchivedProjects(projects, archiveThreshold) {
+export function markArchivedProjects(projects, archiveThreshold) {
     const now = Date.now();
 
     return projects.map((p) => ({
@@ -299,7 +251,7 @@ function markArchivedProjects(projects, archiveThreshold) {
 
 // ── Step 7: Apply domain blacklist ───────────────────────────
 
-function applyBlacklist(projects, blacklist) {
+export function applyBlacklist(projects, blacklist) {
     if (!blacklist || blacklist.length === 0) return projects;
 
     return projects.map((p) => {
@@ -322,7 +274,7 @@ function applyBlacklist(projects, blacklist) {
  * Carry over starred status and custom names from previous
  * auto-detected projects to the newly generated ones.
  */
-function restoreUserCustomizations(newProjects, prevAutoDetected) {
+export function restoreUserCustomizations(newProjects, prevAutoDetected) {
     // Build lookup maps from previous auto-detected projects
     const starredDomainSets = [];
     const renamedMap = new Map(); // primary domain → custom name
@@ -370,7 +322,7 @@ function restoreUserCustomizations(newProjects, prevAutoDetected) {
 
 // ── Step 9: Sort and cap ─────────────────────────────────────
 
-function sortProjects(projects) {
+export function sortProjects(projects) {
     return [...projects].sort((a, b) => {
         // Starred first
         if (a.starred && !b.starred) return -1;
@@ -386,7 +338,7 @@ function sortProjects(projects) {
  * Cap the number of active auto-detected projects.
  * Archived projects are always kept (they're hidden in the UI).
  */
-function capActiveProjects(projects, maxActive) {
+export function capActiveProjects(projects, maxActive) {
     const result = [];
     let activeCount = 0;
 
@@ -412,7 +364,7 @@ function capActiveProjects(projects, maxActive) {
  * Called implicitly via saveProjects since Sets don't serialize.
  * But we explicitly clean to be safe.
  */
-function cleanForStorage(project) {
+export function cleanForStorage(project) {
     const { _domains, ...clean } = project;
     return clean;
 }

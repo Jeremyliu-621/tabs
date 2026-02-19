@@ -11,6 +11,7 @@
 
 import { ALL_SCENARIOS } from './scenarios.js';
 import { STORAGE_KEYS, TRACKING, CLUSTERING } from '../shared/constants.js';
+import { extractDomain, formatTimeAgo } from '../shared/utils.js';
 
 // ── Constants ────────────────────────────────────────────────
 
@@ -86,17 +87,6 @@ let currentScenarioData = null;
 
 // ── Utilities ────────────────────────────────────────────────
 
-function formatTimeAgo(timestamp) {
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 60) return 'just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-}
-
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
 
@@ -105,14 +95,6 @@ function flashStatus(el, message, type = 'success') {
     el.className = `settings-status ${type}`;
     show(el);
     setTimeout(() => hide(el), 2500);
-}
-
-function extractDomain(url) {
-    try {
-        return new URL(url).hostname;
-    } catch {
-        return url;
-    }
 }
 
 // ── Collapsible Toggle Helper ────────────────────────────────

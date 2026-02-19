@@ -1,5 +1,5 @@
 import { AI } from '../shared/constants.js';
-import { generateId } from '../shared/utils.js';
+import { generateId, buildSessions } from '../shared/utils.js';
 
 /**
  * Gemini API client for tab clustering analysis.
@@ -18,47 +18,6 @@ function sanitizeUrl(url) {
     } catch {
         return url;
     }
-}
-
-/**
- * Build sessions from events (reused from clustering.js logic).
- */
-function buildSessions(events, sessionGap = 15 * 60 * 1000) {
-    const sorted = [...events]
-        .filter((e) => e.domain && e.timestamp)
-        .sort((a, b) => a.timestamp - b.timestamp);
-
-    if (sorted.length === 0) return [];
-
-    const sessions = [];
-    let current = {
-        id: `session_${sorted[0].timestamp}`,
-        start: sorted[0].timestamp,
-        end: sorted[0].timestamp,
-        events: [sorted[0]],
-        domains: new Set([sorted[0].domain]),
-    };
-
-    for (let i = 1; i < sorted.length; i++) {
-        const e = sorted[i];
-        if (e.timestamp - current.end > sessionGap) {
-            sessions.push(current);
-            current = {
-                id: `session_${e.timestamp}`,
-                start: e.timestamp,
-                end: e.timestamp,
-                events: [e],
-                domains: new Set([e.domain]),
-            };
-        } else {
-            current.end = e.timestamp;
-            current.events.push(e);
-            current.domains.add(e.domain);
-        }
-    }
-    sessions.push(current);
-
-    return sessions;
 }
 
 /**

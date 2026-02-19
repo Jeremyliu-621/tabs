@@ -1,4 +1,4 @@
-import { STORAGE_KEYS } from '../shared/constants.js';
+import { STORAGE_KEYS, AI } from '../shared/constants.js';
 import { getAICache, saveAICache, getAIMetadata, saveAIMetadata } from './storage.js';
 
 /**
@@ -6,8 +6,6 @@ import { getAICache, saveAICache, getAIMetadata, saveAIMetadata } from './storag
  * Provides instant read for popup UI and tracks cache invalidation.
  */
 
-const CACHE_KEY = 'ai_cache';
-const METADATA_KEY = 'ai_analysis_metadata';
 
 /**
  * Get cached projects.
@@ -65,16 +63,15 @@ export async function shouldInvalidateCache(currentTabCount) {
     const metadata = await getCacheMetadata();
     const now = Date.now();
     
-    // Check time trigger (5 minutes)
+    // Check time trigger
     const timeElapsed = now - metadata.lastAnalysisTime;
-    const FIVE_MINUTES = 5 * 60 * 1000;
-    if (timeElapsed >= FIVE_MINUTES) {
+    if (timeElapsed >= AI.TRIGGER_TIME_MINUTES * 60 * 1000) {
         return true;
     }
     
-    // Check tab count trigger (5+ new tabs)
+    // Check tab count trigger
     const newTabs = currentTabCount - metadata.tabsAtLastAnalysis;
-    if (newTabs >= 5) {
+    if (newTabs >= AI.TRIGGER_NEW_TABS) {
         return true;
     }
     
