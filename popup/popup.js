@@ -63,6 +63,54 @@ async function init() {
 let isLoadingData = false;
 let lastRenderedTimestamp = 0;
 
+// ── Deletion queue ────────────────────────────────────────────
+// Tracks project IDs being deleted so renderProjects can skip them,
+// and processes deletions sequentially to avoid save-race conditions.
+const pendingDeletions = new Set();
+let isDeletionQueueRunning = false;
+const deletionQueue = [];
+
+/**
+ * Queue a project for deletion. The card is removed from the DOM
+ * immediately (optimistic update) and the storage write is serialised
+ * so concurrent deletes never overwrite each other.
+ */
+function deleteProject(projectId) {
+    if (!projectId || pendingDeletions.has(projectId)) return;
+
+    pendingDeletions.add(projectId);
+
+    // Optimistic UI: remove the card right away
+    const card = document.querySelector(`[data-project-id="${projectId}"]`);
+    if (card) card.remove();
+
+    deletionQueue.push(projectId);
+    processDeletionQueue();
+}
+
+async function processDeletionQueue() {
+    if (isDeletionQueueRunning) return;
+    isDeletionQueueRunning = true;
+
+    while (deletionQueue.length > 0) {
+        const id = deletionQueue.shift();
+        try {
+            const allProjects = await getProjects();
+            const p = allProjects.find((x) => x.id === id);
+            if (p) {
+                p.dismissed = true;
+                await saveProjects(allProjects);
+            }
+        } catch (err) {
+            console.error('[Popup] Error deleting project:', id, err);
+        }
+    }
+
+    isDeletionQueueRunning = false;
+    pendingDeletions.clear();
+    loadData();
+}
+
 async function loadData() {
     // Prevent concurrent loads
     if (isLoadingData) {
@@ -233,6 +281,11 @@ function projectHash(project) {
 function renderProjects(projects) {
     const list = document.getElementById('project-list');
     const empty = document.getElementById('projects-empty');
+
+    // Filter out any projects that are pending deletion (optimistic removal)
+    if (pendingDeletions.size > 0) {
+        projects = projects.filter((p) => !pendingDeletions.has(p.id));
+    }
 
     if (!projects || projects.length === 0) {
         // Clear all if no projects
@@ -501,14 +554,9 @@ function createProjectCard(project, isArchived = false) {
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn btn-danger';
         deleteBtn.textContent = 'Delete';
-        deleteBtn.addEventListener('click', async () => {
-            const allProjects = await getProjects();
-            const p = allProjects.find((x) => x.id === project.id);
-            if (p) {
-                p.dismissed = true;
-                await saveProjects(allProjects);
-            }
-            loadData();
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteProject(project.id);
         });
 
         actions.appendChild(restoreBtn);
@@ -539,14 +587,9 @@ function createProjectCard(project, isArchived = false) {
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn btn-danger';
         deleteBtn.textContent = 'Delete';
-        deleteBtn.addEventListener('click', async () => {
-            const allProjects = await getProjects();
-            const p = allProjects.find((x) => x.id === project.id);
-            if (p) {
-                p.dismissed = true;
-                await saveProjects(allProjects);
-            }
-            loadData();
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteProject(project.id);
         });
 
         // Pin button
