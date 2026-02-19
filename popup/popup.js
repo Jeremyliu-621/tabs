@@ -990,8 +990,25 @@ async function exitEditMode(card, project) {
         return;
     }
     
+    // Get fresh project data if not provided
+    let projectData = project;
+    if (!projectData || !projectData.branches) {
+        const allProjects = await getProjects();
+        projectData = allProjects.find((x) => x.id === projectId) || card._projectData;
+    }
+    
+    if (!projectData) {
+        console.error('[Popup] Cannot exit edit mode: project data not found');
+        return;
+    }
+    
     // Save the edits first
-    await saveInlineEdits(card, project || card._projectData);
+    try {
+        await saveInlineEdits(card, projectData);
+    } catch (err) {
+        console.error('[Popup] Error saving edits:', err);
+        // Still exit edit mode even if save fails
+    }
     
     // Remove editing class before re-rendering
     card.classList.remove('editing');
@@ -1026,20 +1043,20 @@ async function enterEditMode(card, project) {
     const nameEl = card.querySelector('.project-name');
     if (nameEl && !nameEl.querySelector('input')) {
         const originalName = currentProject.name;
-        const input = document.createElement('input');
-        input.type = 'text';
+    const input = document.createElement('input');
+    input.type = 'text';
         input.className = 'project-name-edit-inline';
-        input.value = originalName;
-        input.style.cssText = `
-            font-family: inherit;
-            font-size: 0.95rem;
-            font-weight: 600;
-            border: 1px solid var(--color-accent);
-            border-radius: 4px;
-            padding: 2px 6px;
-            width: 100%;
+    input.value = originalName;
+    input.style.cssText = `
+        font-family: inherit;
+        font-size: 0.95rem;
+        font-weight: 600;
+        border: 1px solid var(--color-accent);
+        border-radius: 4px;
+        padding: 2px 6px;
+        width: 100%;
             max-width: 300px;
-            outline: none;
+        outline: none;
             background: var(--color-surface);
         `;
         nameEl.textContent = '';
@@ -1079,7 +1096,18 @@ async function enterEditMode(card, project) {
             saveBtn.textContent = 'Save';
             saveBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                await exitEditMode(card, currentProject);
+                e.preventDefault();
+                console.log('[Popup] Save button clicked for project:', currentProject.id);
+                try {
+                    await exitEditMode(card, currentProject);
+                    console.log('[Popup] Save completed successfully');
+                } catch (err) {
+                    console.error('[Popup] Error in save button handler:', err);
+                    // Still try to exit edit mode
+                    card.classList.remove('editing');
+                    renderedProjects.delete(currentProject.id);
+                    await loadData();
+                }
             });
             actions.appendChild(saveBtn);
         } else {
@@ -1108,8 +1136,15 @@ function addEditControlsToBranches(branchContainer, project) {
             // Add checkbox to branch name
             const branchNameEl = branchItem.querySelector('.branch-name');
             if (branchNameEl) {
-                // Get the original text before modifying
-                const originalText = branchNameEl.textContent;
+                // Get the original text - extract only text nodes, ignoring checkboxes
+                const textNodes = Array.from(branchNameEl.childNodes)
+                    .filter(node => node.nodeType === Node.TEXT_NODE)
+                    .map(node => node.textContent)
+                    .join('')
+                    .trim();
+                
+                // Fallback: if no text nodes, try to get textContent and clean it
+                const originalText = textNodes || branchNameEl.textContent.trim();
                 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
@@ -1246,8 +1281,13 @@ function addEditControlsToBranches(branchContainer, project) {
  * Save inline edits.
  */
 async function saveInlineEdits(card, project) {
-    const allProjects = await getProjects();
-    const p = allProjects.find((x) => x.id === project.id);
+    if (!project || !project.id) {
+        console.error('[Popup] Invalid project data for saving:', project);
+        return;
+    }
+    
+            const allProjects = await getProjects();
+            const p = allProjects.find((x) => x.id === project.id);
     if (!p) {
         console.error('[Popup] Project not found for saving:', project.id);
         return;
@@ -1261,7 +1301,11 @@ async function saveInlineEdits(card, project) {
 
     // Collect selected branches and tabs
     const branchContainer = card.querySelector('.project-branches');
-    if (!branchContainer) return;
+    if (!branchContainer) {
+        console.warn('[Popup] No branch container found, saving name only');
+                await saveProjects(allProjects);
+        return;
+    }
 
     const branchItems = branchContainer.querySelectorAll('.branch-item');
     const directTabList = branchContainer.querySelector('.branch-tabs:not(.branch-tabs--multi-column)');
@@ -1270,17 +1314,45 @@ async function saveInlineEdits(card, project) {
     if (branchItems.length > 0) {
         // Normal branch structure
         branchItems.forEach((branchItem, index) => {
-            const branchCheckbox = branchItem.querySelector('.branch-edit-checkbox');
-            if (!branchCheckbox || !branchCheckbox.checked) {
+            // Try multiple ways to find the checkbox
+            let branchCheckbox = branchItem.querySelector('.branch-edit-checkbox');
+            if (!branchCheckbox) {
+                // Fallback: search in branch-name element
+                const branchName = branchItem.querySelector('.branch-name');
+                if (branchName) {
+                    branchCheckbox = branchName.querySelector('.branch-edit-checkbox');
+                }
+            }
+            
+            if (!branchCheckbox) {
+                console.warn('[Popup] No branch checkbox found for branch item:', index);
+                return;
+            }
+            
+            if (!branchCheckbox.checked) {
                 return; // Skip unchecked branches
             }
 
             const branchId = branchCheckbox.dataset.branchId;
-            const originalBranch = project.branches.find(
+            if (!branchId) {
+                console.warn('[Popup] Branch checkbox missing branchId:', branchCheckbox);
+                return;
+            }
+            
+            let originalBranch = project.branches.find(
                 (b) => (b.id && b.id === branchId) || b.domain === branchId
             );
             
-            if (!originalBranch) return;
+            // Fallback: try matching by index if ID matching fails
+            if (!originalBranch && index < project.branches.length) {
+                originalBranch = project.branches[index];
+                console.warn('[Popup] Branch ID match failed, using index fallback:', index);
+            }
+            
+            if (!originalBranch) {
+                console.warn('[Popup] Original branch not found for ID:', branchId, 'or index:', index, 'Available branches:', project.branches.map(b => b.id || b.domain));
+                return;
+            }
 
             // Collect selected tabs
             const tabCheckboxes = branchItem.querySelectorAll('.tab-edit-checkbox:checked');
@@ -1329,7 +1401,13 @@ async function saveInlineEdits(card, project) {
     p.branches = newBranches;
 
     // Save changes
-    await saveProjects(allProjects);
+    try {
+        await saveProjects(allProjects);
+        console.log('[Popup] Successfully saved project edits:', p.id, 'Branches:', newBranches.length);
+    } catch (err) {
+        console.error('[Popup] Error saving projects:', err);
+        throw err; // Re-throw so caller can handle it
+    }
 }
 
 /**
