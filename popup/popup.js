@@ -614,51 +614,63 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         actions.appendChild(restoreBtn);
         actions.appendChild(deleteBtn);
     } else {
-        // Active projects get Switch, Open, Delete buttons + sub-branch buttons
-        // Group 1: Main branch buttons (black background, white text)
+        // Active projects: Clean button layout with toggle for sub-branches
+        const actionsLeft = document.createElement('div');
+        actionsLeft.className = 'project-actions-left';
+        
+        const actionsRight = document.createElement('div');
+        actionsRight.className = 'project-actions-right';
+        
+        // Toggle for including sub-branches
+        const includeSubBranchesToggle = document.createElement('label');
+        includeSubBranchesToggle.className = 'include-sub-branches-toggle';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'sub-branches-checkbox';
+        const label = document.createElement('span');
+        label.className = 'toggle-label';
+        label.textContent = 'All tabs';
+        includeSubBranchesToggle.appendChild(checkbox);
+        includeSubBranchesToggle.appendChild(label);
+        includeSubBranchesToggle.title = 'Include sub-branches (all tabs)';
+        
+        // Update toggle styling when checked
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) {
+                includeSubBranchesToggle.classList.add('checked');
+            } else {
+                includeSubBranchesToggle.classList.remove('checked');
+            }
+        });
+        
+        // Switch button
         const switchBtn = document.createElement('button');
-        switchBtn.className = 'btn btn-primary btn-main-branch';
+        switchBtn.className = 'btn btn-primary';
         switchBtn.textContent = 'Switch';
         switchBtn.addEventListener('click', () => {
-            const allUrls = getAllProjectUrls(project);
+            const allUrls = checkbox.checked 
+                ? getAllProjectUrlsWithSubBranches(project)
+                : getAllProjectUrls(project);
             if (allUrls.length > 0) {
                 chrome.runtime.sendMessage({ action: 'switchToProject', urls: allUrls });
                 window.close();
             }
         });
 
+        // Open button
         const openBtn = document.createElement('button');
-        openBtn.className = 'btn btn-primary btn-main-branch';
+        openBtn.className = 'btn btn-primary';
         openBtn.textContent = 'Open';
         openBtn.addEventListener('click', () => {
-            const allUrls = getAllProjectUrls(project);
+            const allUrls = checkbox.checked 
+                ? getAllProjectUrlsWithSubBranches(project)
+                : getAllProjectUrls(project);
             if (allUrls.length > 0) {
                 chrome.runtime.sendMessage({ action: 'openProjectWindow', urls: allUrls });
             }
         });
 
-        // Group 2: Sub-branch buttons (white background, black text)
-        const switchAllBtn = document.createElement('button');
-        switchAllBtn.className = 'btn btn-secondary btn-sub-branch';
-        switchAllBtn.textContent = 'Switch';
-        switchAllBtn.addEventListener('click', () => {
-            const allUrls = getAllProjectUrlsWithSubBranches(project);
-            if (allUrls.length > 0) {
-                chrome.runtime.sendMessage({ action: 'switchToProject', urls: allUrls });
-                window.close();
-            }
-        });
-
-        const openAllBtn = document.createElement('button');
-        openAllBtn.className = 'btn btn-secondary btn-sub-branch';
-        openAllBtn.textContent = 'Open';
-        openAllBtn.addEventListener('click', () => {
-            const allUrls = getAllProjectUrlsWithSubBranches(project);
-            if (allUrls.length > 0) {
-                chrome.runtime.sendMessage({ action: 'openProjectWindow', urls: allUrls });
-            }
-        });
-
+        // Delete button
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn btn-danger';
         deleteBtn.textContent = 'Delete';
@@ -667,11 +679,13 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
             deleteProject(project.id);
         });
 
-        actions.appendChild(switchBtn);
-        actions.appendChild(openBtn);
-        actions.appendChild(switchAllBtn);
-        actions.appendChild(openAllBtn);
-        actions.appendChild(deleteBtn);
+        actionsLeft.appendChild(includeSubBranchesToggle);
+        actionsLeft.appendChild(switchBtn);
+        actionsLeft.appendChild(openBtn);
+        actionsRight.appendChild(deleteBtn);
+        
+        actions.appendChild(actionsLeft);
+        actions.appendChild(actionsRight);
     }
 
     card.appendChild(header);
