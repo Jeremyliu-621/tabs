@@ -37,11 +37,11 @@ export async function runClustering() {
     // Step 1: Get recent events only
     const allEvents = await getTabEvents();
     const recentEvents = filterRecentEvents(allEvents, settings.dataRetention);
-    if (recentEvents.length < 3) return;
+    if (recentEvents.length < 3) return [];
 
     // Step 2: Build sessions
     const sessions = buildSessions(recentEvents, settings.sessionGap);
-    if (sessions.length === 0) return;
+    if (sessions.length === 0) return [];
 
     // Step 3: Create project candidates from multi-domain sessions
     const candidates = sessions

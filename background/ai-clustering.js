@@ -414,7 +414,7 @@ export async function runAIClustering(force = false) {
         
         // Fallback to heuristic clustering
         // Note: runClustering() handles its own filtering, but we still want to exclude pinned
-        aiProjects = await runClustering();
+        aiProjects = (await runClustering()) || [];
         source = 'heuristic';
         tabsAnalyzed = eventsForAnalysis.length;
         

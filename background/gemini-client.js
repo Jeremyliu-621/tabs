@@ -285,23 +285,51 @@ function parseResponse(responseText) {
                 };
             }
 
+            // Log raw project structure for debugging
+            console.log('[Gemini] Processing project:', p.name, {
+                tabsType: typeof p.tabs,
+                tabsLength: p.tabs?.length,
+                firstTab: p.tabs?.[0],
+                firstTabType: typeof p.tabs?.[0]
+            });
+            
             // Group tabs by domain
             const domainMap = new Map();
             let validTabsCount = 0;
             let invalidTabsCount = 0;
             
             for (const tab of p.tabs) {
-                if (!tab || (!tab.url && !tab.title)) {
-                    invalidTabsCount++;
-                    continue; // Skip tabs without URLs or titles
-                }
+                let tabUrl = '';
+                let tabTitle = '';
                 
-                // Handle both string URLs and object URLs
-                const tabUrl = typeof tab.url === 'string' ? tab.url : (tab.url?.url || '');
-                const tabTitle = tab.title || tab.url?.title || '';
+                // Handle string tabs (plain URLs)
+                if (typeof tab === 'string') {
+                    tabUrl = tab;
+                    tabTitle = '';
+                } else if (tab && typeof tab === 'object') {
+                    // Handle object tabs with various field names
+                    // Try multiple possible field names for URL
+                    tabUrl = tab.url || tab.link || tab.href || '';
+                    // Handle nested URL objects
+                    if (!tabUrl && tab.url && typeof tab.url === 'object') {
+                        tabUrl = tab.url.url || tab.url.href || tab.url.link || '';
+                    }
+                    // Try multiple possible field names for title
+                    tabTitle = tab.title || tab.name || tab.label || '';
+                    // Handle nested title objects
+                    if (!tabTitle && tab.url && typeof tab.url === 'object') {
+                        tabTitle = tab.url.title || tab.url.name || '';
+                    }
+                } else {
+                    // Invalid tab format
+                    invalidTabsCount++;
+                    console.warn('[Gemini] Skipping invalid tab format:', tab);
+                    continue;
+                }
                 
                 if (!tabUrl) {
                     invalidTabsCount++;
+                    console.warn('[Gemini] Skipping tab with no URL:', tab);
                     continue;
                 }
                 

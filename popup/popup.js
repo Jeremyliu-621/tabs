@@ -345,7 +345,7 @@ function createProjectCard(project, isArchived = false) {
     const sourceBadge = project.source === 'ai' 
         ? '<span class="source-badge source-badge--ai" title="AI Enhanced">✨</span>'
         : project.autoDetected 
-            ? '<span class="source-badge source-badge--heuristic" title="Auto-detected">Auto-detected</span>'
+            ? '<span class="source-badge source-badge--heuristic" title="Auto">Auto</span>'
             : '';
     
     header.innerHTML = `
