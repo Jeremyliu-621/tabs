@@ -5,6 +5,8 @@
  * Events follow the schema: { id, type, domain, url, title, timestamp, tabId, focusDuration }.
  */
 
+import { extractDomain } from '../shared/utils.js';
+
 // ── Helpers ──────────────────────────────────────────────────
  
 const MINUTE = 60 * 1000;
@@ -25,14 +27,6 @@ function makeTabId() {
 
 function makeEventId() {
     return `evt-${_nextEventId++}`;
-}
-
-function extractDomain(url) {
-    try {
-        return new URL(url).hostname.replace(/^www\./, '');
-    } catch {
-        return url;
-    }
 }
 
 /**

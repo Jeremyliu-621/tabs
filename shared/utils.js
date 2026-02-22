@@ -1,4 +1,4 @@
-import { IGNORED_URL_PREFIXES } from './constants.js';
+import { IGNORED_URL_PREFIXES, TRACKING } from './constants.js';
 
 /**
  * Extract the domain from a URL string.
@@ -33,6 +33,7 @@ export function generateId() {
  * Human-readable "time ago" string.
  */
 export function formatTimeAgo(timestamp) {
+    if (!timestamp) return '';
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
 
     if (seconds < 60) return 'just now';
@@ -65,4 +66,57 @@ export function truncate(str, maxLen = 40) {
 export function getTabDisplayName(tab) {
     if (tab.title && tab.title.trim()) return truncate(tab.title);
     return extractDomain(tab.url) || 'Untitled';
+}
+
+/**
+ * Split a chronological event array into sessions separated by inactivity gaps.
+ *
+ * Each session object contains:
+ *   - id:      `session_<start_timestamp>` (stable identifier for prompt/debug use)
+ *   - start:   earliest event timestamp in the session
+ *   - end:     latest event timestamp in the session
+ *   - events:  array of the raw event objects in chronological order
+ *   - domains: Set<string> of unique domains seen during the session
+ *
+ * @param {Array}  events     - Tab events; each must have `.domain` and `.timestamp`.
+ * @param {number} sessionGap - Max inactivity (ms) before a new session starts.
+ *                               Defaults to TRACKING.SESSION_GAP (15 min).
+ * @returns {Array} Array of session objects, chronologically ordered.
+ */
+export function buildSessions(events, sessionGap = TRACKING.SESSION_GAP) {
+    const sorted = [...events]
+        .filter((e) => e.domain && e.timestamp)
+        .sort((a, b) => a.timestamp - b.timestamp);
+
+    if (sorted.length === 0) return [];
+
+    const sessions = [];
+    let current = {
+        id: `session_${sorted[0].timestamp}`,
+        start: sorted[0].timestamp,
+        end: sorted[0].timestamp,
+        events: [sorted[0]],
+        domains: new Set([sorted[0].domain]),
+    };
+
+    for (let i = 1; i < sorted.length; i++) {
+        const e = sorted[i];
+        if (e.timestamp - current.end > sessionGap) {
+            sessions.push(current);
+            current = {
+                id: `session_${e.timestamp}`,
+                start: e.timestamp,
+                end: e.timestamp,
+                events: [e],
+                domains: new Set([e.domain]),
+            };
+        } else {
+            current.end = e.timestamp;
+            current.events.push(e);
+            current.domains.add(e.domain);
+        }
+    }
+    sessions.push(current);
+
+    return sessions;
 }
