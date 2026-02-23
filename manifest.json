@@ -29,7 +29,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "debug/*"
+        "debug/*",
+        "env.json"
       ],
       "matches": [
         "<all_urls>"

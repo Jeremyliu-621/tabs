@@ -73,22 +73,22 @@ export const IGNORED_URL_PREFIXES = [
 export const AI = {
   /** Gemini API endpoint */
   GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent',
-  
+
   /** Request timeout in milliseconds */
   REQUEST_TIMEOUT: 10000, // 10 seconds
-  
+
   /** Minimum tabs required before running AI analysis */
-  MIN_TABS_FOR_ANALYSIS: 10,
-  
+  MIN_TABS_FOR_ANALYSIS: 2,
+
   /** Trigger: Run analysis if this many new tabs opened */
-  TRIGGER_NEW_TABS: 5,
-  
+  TRIGGER_NEW_TABS: 2,
+
   /** Trigger: Run analysis if this many minutes elapsed */
-  TRIGGER_TIME_MINUTES: 5,
-  
+  TRIGGER_TIME_MINUTES: 1,
+
   /** Maximum tabs to send to AI (privacy/performance) */
   MAX_TABS_TO_ANALYZE: 100,
-  
+
   /** Only analyze tabs from last N hours */
   ANALYSIS_WINDOW_HOURS: 24,
 };
