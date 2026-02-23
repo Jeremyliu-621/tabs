@@ -94,11 +94,24 @@ export async function runAIClustering(force = false) {
 
     try {
         let apiKey = await getAIApiKey();
-        
-        // API key must be stored via Settings UI or console:
+
+        // Try to load from env.json if no key found in storage
+        if (!apiKey || apiKey.length <= 20) {
+            try {
+                const envResponse = await fetch(chrome.runtime.getURL('env.json'));
+                if (envResponse.ok) {
+                    const envData = await envResponse.json();
+                    if (envData.GEMINI_API_KEY) apiKey = envData.GEMINI_API_KEY;
+                }
+            } catch (e) {
+                // Ignore missing env.json
+            }
+        }
+
+        // API key must be stored via Settings UI, console, or env.json:
         //   chrome.storage.local.set({ ai_api_key: 'YOUR_KEY' })
         // Get a key from: https://aistudio.google.com/app/apikey
-        
+
         if (apiKey && apiKey.length > 20) {
             console.log('[AI Clustering] Using API key, calling Gemini...', { tabCount: eventsForAnalysis.length });
             aiProjects = await analyzeTabsWithGemini(eventsForAnalysis, apiKey);
@@ -120,7 +133,7 @@ export async function runAIClustering(force = false) {
         } else {
             console.warn('[AI Clustering] AI failed, falling back to heuristics:', error.message);
         }
-        
+
         // Fallback to heuristic clustering.
         // runClustering() returns the full project set (including manual/pinned),
         // but mergeProjects() re-adds manual/pinned from existingProjects.
@@ -129,13 +142,13 @@ export async function runAIClustering(force = false) {
         aiProjects = heuristicAll.filter((p) => p.autoDetected);
         source = 'heuristic';
         tabsAnalyzed = eventsForAnalysis.length;
-        
+
         // Mark projects with source
         aiProjects = aiProjects.map((p) => ({
             ...p,
             source: 'heuristic',
         }));
-        
+
         console.log(`[AI Clustering] Heuristic fallback complete: ${aiProjects.length} projects`);
     }
 
@@ -155,7 +168,7 @@ export async function runAIClustering(force = false) {
     // Stability check: only save if there are meaningful changes
     // Compare with existing projects to avoid unnecessary updates
     const hasMeaningfulChanges = hasProjectChanges(existingProjects, finalProjects);
-    
+
     if (hasMeaningfulChanges) {
         // Save to storage
         await saveProjects(finalProjects);
@@ -180,7 +193,7 @@ export async function runAIClustering(force = false) {
  */
 export async function checkAndRunAIClustering() {
     const currentTabCount = await getCurrentTabCount();
-    
+
     if (currentTabCount < AI.MIN_TABS_FOR_ANALYSIS) {
         return; // Not enough tabs yet
     }
