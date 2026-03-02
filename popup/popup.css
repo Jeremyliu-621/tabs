@@ -283,6 +283,25 @@ body {
   transition: color 0.15s ease;
 }
 
+/* ── Edit Button (inline next to project name) ─────────────── */
+
+.project-edit-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 2px 4px;
+  margin-left: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.project-edit-btn:hover {
+  opacity: 1;
+}
+
 /* ── Source Badges ──────────────────────────────────────────── */
 
 .source-badge {
@@ -388,6 +407,10 @@ body {
 .branch-tabs {
   padding-left: var(--space-base);
   margin-top: 2px;
+}
+
+.branch-tabs--no-indent {
+  padding-left: 0;
 }
 
 .branch-tabs--multi-column {
@@ -532,6 +555,11 @@ body {
 
 .btn-secondary:hover {
   border-color: var(--color-accent);
+}
+
+.btn-sm {
+  font-size: 0.65rem;
+  padding: 3px var(--space-sm);
 }
 
 .btn-danger {
@@ -699,6 +727,13 @@ body {
 .edit-tab-checkbox:disabled + .edit-tab-label {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.no-branches-message {
+  padding: var(--space-sm);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-style: italic;
 }
 
 .edit-no-branches,

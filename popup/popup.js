@@ -80,14 +80,12 @@ function confirmDelete(btn, onConfirm) {
 
     // Create confirm / cancel buttons
     const confirmBtn = document.createElement('button');
-    confirmBtn.className = 'btn btn-danger';
+    confirmBtn.className = 'btn btn-danger btn-sm';
     confirmBtn.textContent = 'Yes, delete';
-    confirmBtn.style.fontSize = '0.65rem';
 
     const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.className = 'btn btn-secondary btn-sm';
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.fontSize = '0.65rem';
 
     // Replace delete button with the pair
     parent.replaceChild(confirmBtn, btn);
@@ -488,23 +486,6 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         editBtn.className = 'project-edit-btn';
         editBtn.textContent = '✎';
         editBtn.title = 'Edit project name';
-        editBtn.style.cssText = `
-            background: none;
-            border: none;
-            color: var(--color-text-secondary, #666);
-            cursor: pointer;
-            font-size: 0.9rem;
-            padding: 2px 4px;
-            margin-left: 4px;
-            opacity: 0.6;
-            transition: opacity 0.2s;
-        `;
-        editBtn.addEventListener('mouseenter', () => {
-            editBtn.style.opacity = '1';
-        });
-        editBtn.addEventListener('mouseleave', () => {
-            editBtn.style.opacity = '0.6';
-        });
         editBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
             toggleEditMode(card, project);
@@ -588,8 +569,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         if (shouldSkipBranchDisplay) {
             // Skip branch structure, show tabs directly
             const tabList = document.createElement('div');
-            tabList.className = 'branch-tabs';
-            tabList.style.cssText = 'padding-left: 0;'; // Remove left padding since no branch header
+            tabList.className = 'branch-tabs branch-tabs--no-indent';
             // If there's only one project, allow tabs to use multiple columns
             if (totalProjectCount === 1) {
                 tabList.classList.add('branch-tabs--multi-column');
@@ -645,7 +625,6 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         // Show message if no branches
         const noBranchesMsg = document.createElement('div');
         noBranchesMsg.className = 'no-branches-message';
-        noBranchesMsg.style.cssText = 'padding: 8px; color: var(--color-text-secondary); font-size: 0.75rem; font-style: italic;';
         noBranchesMsg.textContent = 'No tabs in this project';
         branchContainer.appendChild(noBranchesMsg);
     }
@@ -1218,8 +1197,7 @@ function addEditControlsToBranches(branchContainer, project) {
                 checkbox.className = 'branch-edit-checkbox';
                 checkbox.checked = true;
                 checkbox.dataset.branchId = branch.id || branch.domain;
-                checkbox.style.cssText = 'margin-right: 6px; cursor: pointer;';
-                
+
                 // Stop checkbox clicks from propagating to branch name
                 checkbox.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -1238,7 +1216,6 @@ function addEditControlsToBranches(branchContainer, project) {
                 branchNameEl.parentNode.replaceChild(newBranchName, branchNameEl);
                 
                 // Add new click handler that only toggles checkbox (doesn't open website)
-                newBranchName.style.cursor = 'pointer';
                 newBranchName.addEventListener('click', (e) => {
                     e.stopPropagation();
                     if (e.target !== checkbox) {
@@ -1280,15 +1257,13 @@ function addEditControlsToBranches(branchContainer, project) {
             checkbox.className = 'tab-edit-checkbox';
             checkbox.checked = true;
             checkbox.dataset.tabUrl = tab.url;
-            checkbox.style.cssText = 'margin-right: 4px; cursor: pointer;';
-            
+
             // Insert checkbox before tab link
             const tabItem = tabLink.closest('.branch-tab');
             if (tabItem) {
                 tabItem.insertBefore(checkbox, tabLink);
-                
+
                 // Make tab clickable to toggle checkbox
-                tabLink.style.cursor = 'pointer';
                 tabLink.addEventListener('click', (e) => {
                     e.preventDefault();
                     if (e.target !== checkbox) {
@@ -1324,15 +1299,13 @@ function addEditControlsToBranches(branchContainer, project) {
             checkbox.className = 'tab-edit-checkbox';
             checkbox.checked = true;
             checkbox.dataset.tabUrl = tab.url;
-            checkbox.style.cssText = 'margin-right: 4px; cursor: pointer;';
-            
+
             // Insert checkbox before tab link
             const tabItem = tabLink.closest('.branch-tab');
             if (tabItem) {
                 tabItem.insertBefore(checkbox, tabLink);
-                
+
                 // Make tab clickable to toggle checkbox
-                tabLink.style.cursor = 'pointer';
                 tabLink.addEventListener('click', (e) => {
                     e.preventDefault();
                     if (e.target !== checkbox) {
