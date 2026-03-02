@@ -72,8 +72,11 @@ function prepareTabsForAnalysis(events) {
 
 /**
  * Build the prompt for Gemini API.
+ * @param {Array} tabs - Prepared tab objects
+ * @param {Array} sessions - Session objects with id/start/end/domains
+ * @param {Array} existingProjects - Existing auto-detected projects to help with naming continuity
  */
-function buildPrompt(tabs, sessions = []) {
+function buildPrompt(tabs, sessions = [], existingProjects = []) {
     const now = Date.now();
 
     const tabsList = tabs.map((t, i) => {
@@ -102,6 +105,10 @@ function buildPrompt(tabs, sessions = []) {
         }).join('\n')
         : '  (no session data)';
 
+    const existingProjectsList = existingProjects.length > 0
+        ? existingProjects.map(p => `  - "${p.name}"`).join('\n')
+        : '  (none yet)';
+
     return `You are the core intelligence of a Chrome extension called "Tabs".
 
 PRODUCT CONTEXT:
@@ -109,6 +116,9 @@ Tabs automatically detects which browser tabs belong together and lets users swi
 
 YOUR JOB:
 Analyze the user's browsing data and group their tabs into meaningful, focused projects. Group by semantic meaning and context — not by domain. The same domain can and should appear in multiple projects if the context differs.
+
+EXISTING PROJECTS (use these exact names when tabs clearly belong to one of them):
+${existingProjectsList}
 
 SESSIONS (tabs open at the same time are likely related):
 ${sessionsList}
@@ -211,13 +221,7 @@ function parseResponse(responseText) {
         }
         
         const parsed = JSON.parse(cleaned);
-        
-        console.log('[Gemini] Parsed response:', {
-            hasProjects: !!parsed.projects,
-            projectsCount: parsed.projects?.length || 0,
-            firstProject: parsed.projects?.[0],
-        });
-        
+
         if (!parsed.projects || !Array.isArray(parsed.projects)) {
             throw new Error('Invalid response structure: missing projects array');
         }
@@ -244,14 +248,6 @@ function parseResponse(responseText) {
                 };
             }
 
-            // Log raw project structure for debugging
-            console.log('[Gemini] Processing project:', p.name, {
-                tabsType: typeof p.tabs,
-                tabsLength: p.tabs?.length,
-                firstTab: p.tabs?.[0],
-                firstTabType: typeof p.tabs?.[0]
-            });
-            
             // Group tabs by domain
             const domainMap = new Map();
             let validTabsCount = 0;
@@ -356,12 +352,6 @@ function parseResponse(responseText) {
                 }
             }
 
-            console.log('[Gemini] Created project with branches:', {
-                name: p.name,
-                branchesCount: branches.length,
-                totalTabs: branches.reduce((sum, b) => sum + b.tabs.length, 0),
-            });
-
             // At this point, branches is guaranteed to be non-empty and valid
             const project = {
                 id: generateId(),
@@ -425,9 +415,10 @@ function parseResponse(responseText) {
  * Analyze tabs using Gemini API.
  * @param {Array} events - Tab events from storage
  * @param {string} apiKey - Gemini API key
+ * @param {Array} existingProjects - Existing auto-detected projects for naming continuity
  * @returns {Promise<Array>} Array of projects
  */
-export async function analyzeTabsWithGemini(events, apiKey) {
+export async function analyzeTabsWithGemini(events, apiKey, existingProjects = []) {
     if (!apiKey) {
         throw new Error('API key required');
     }
@@ -448,8 +439,8 @@ export async function analyzeTabsWithGemini(events, apiKey) {
         throw new Error('No tabs to analyze');
     }
 
-    // Build prompt with sessions
-    const prompt = buildPrompt(tabs, sessionsForPrompt);
+    // Build prompt with sessions and existing project names for continuity
+    const prompt = buildPrompt(tabs, sessionsForPrompt, existingProjects);
 
     // Create request with timeout
     const controller = new AbortController();

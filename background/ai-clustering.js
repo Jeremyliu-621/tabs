@@ -101,15 +101,14 @@ export async function runAIClustering(force = false) {
         
         if (apiKey && apiKey.length > 20) {
             console.log('[AI Clustering] Using API key, calling Gemini...', { tabCount: eventsForAnalysis.length });
-            aiProjects = await analyzeTabsWithGemini(eventsForAnalysis, apiKey);
+            // Pass existing auto-detected projects so AI can reuse names for continuity
+            const existingAutoProjects = existingProjects.filter(p => p.autoDetected && !p.dismissed);
+            aiProjects = await analyzeTabsWithGemini(eventsForAnalysis, apiKey, existingAutoProjects);
             source = 'ai';
             tabsAnalyzed = eventsForAnalysis.length;
             console.log(`[AI Clustering] ✅ AI analysis complete: ${aiProjects.length} projects`);
         } else {
-            console.warn('[AI Clustering] ⚠️ No valid API key - using heuristics. To enable AI:');
-            console.warn('  1. Get key from: https://aistudio.google.com/app/apikey');
-            console.warn('  2. Run in console: chrome.storage.local.set({ai_api_key: "your-key"})');
-            console.warn('  3. Or hardcode in ai-clustering.js line ~390');
+            console.warn('[AI Clustering] No API key configured — using heuristic fallback. Add key in extension Settings.');
             throw new Error('No valid API key configured');
         }
     } catch (error) {
