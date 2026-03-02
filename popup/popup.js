@@ -1014,15 +1014,16 @@ function setupModal() {
  */
 async function toggleEditMode(card, project) {
     const isEditing = card.classList.contains('editing');
-    
+
     // Prevent multiple rapid clicks
     if (card._isEnteringEditMode) {
         return;
     }
-    
+
     if (isEditing) {
-        // Exit edit mode and save
-        await exitEditMode(card, project);
+        // Use the fresh project data stored when edit mode was entered (fixes stale-reference bug)
+        const projectToSave = card._currentProjectData || project;
+        await exitEditMode(card, projectToSave);
     } else {
         // Enter edit mode
         card._isEnteringEditMode = true;
@@ -1082,7 +1083,7 @@ async function enterEditMode(card, project) {
     }
     
     card.classList.add('editing');
-    
+
     // Load fresh project data
     const allProjects = await getProjects();
     const currentProject = allProjects.find((x) => x.id === project.id);
@@ -1092,30 +1093,29 @@ async function enterEditMode(card, project) {
         return;
     }
 
+    // Store the fresh project on the card so the ✓ button can use it (fixes stale-reference bug)
+    card._currentProjectData = currentProject;
+
     // Make project name editable
     const nameEl = card.querySelector('.project-name');
     if (nameEl && !nameEl.querySelector('input')) {
         const originalName = currentProject.name;
-    const input = document.createElement('input');
-    input.type = 'text';
+        const input = document.createElement('input');
+        input.type = 'text';
         input.className = 'project-name-edit-inline';
-    input.value = originalName;
-    input.style.cssText = `
-        font-family: inherit;
-        font-size: 0.95rem;
-        font-weight: 600;
-        border: 1px solid var(--color-accent);
-        border-radius: 4px;
-        padding: 2px 6px;
-        width: 100%;
-            max-width: 300px;
-        outline: none;
-            background: var(--color-surface);
-        `;
+        input.value = originalName;
         nameEl.textContent = '';
         nameEl.appendChild(input);
         input.focus();
         input.select();
+
+        // Allow Enter key to save
+        input.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                await exitEditMode(card, card._currentProjectData || currentProject);
+            }
+        });
     }
 
     // Add checkboxes to branches and tabs
@@ -1124,7 +1124,7 @@ async function enterEditMode(card, project) {
         addEditControlsToBranches(branchContainer, currentProject);
     }
 
-    // Update edit button text
+    // Update edit button text — it will use card._currentProjectData when clicked
     const editBtn = card.querySelector('.project-edit-btn');
     if (editBtn) {
         editBtn.textContent = '✓';
