@@ -18,6 +18,8 @@ import {
     getClusteringSettings,
     saveClusteringSettings,
     getTabEvents,
+    getAIApiKey,
+    saveAIApiKey,
 } from '../background/storage.js';
 import { TRACKING, CLUSTERING } from '../shared/constants.js';
 import { formatTimeAgo, generateId } from '../shared/utils.js';
@@ -30,6 +32,7 @@ async function init() {
     setupDebugTabs();
     setupModal();
     setupSettings();
+    setupApiKey();
 
     document.getElementById('btn-refresh').addEventListener('click', async () => {
         // Trigger AI re-clustering in the background
@@ -200,15 +203,23 @@ async function loadData() {
         }
 
         // 3. Load full data (analytics, etc.)
-        const [analytics, projects] = await Promise.all([
+        const [analytics, projects, apiKey] = await Promise.all([
             getDebugAnalytics(),
             getProjects(),
+            getAIApiKey(),
         ]);
 
         // Filter out dismissed, then split active and archived
         const visible = projects.filter((p) => !p.dismissed);
         const active = visible.filter((p) => !p.archived);
         const archived = visible.filter((p) => p.archived);
+
+        // Show AI banner when no API key is set
+        const banner = document.getElementById('ai-status-banner');
+        if (banner) {
+            const hasKey = apiKey && apiKey.length > 10;
+            banner.classList.toggle('hidden', hasKey);
+        }
 
         // Only re-render if data actually changed (compare with cached timestamp)
         const projectsTimestamp = Date.now(); // Use current time as projects timestamp
@@ -1550,6 +1561,152 @@ async function resetSettings() {
     const original = btn.textContent;
     btn.textContent = 'Reset ✓';
     setTimeout(() => { btn.textContent = original; }, 1500);
+}
+
+// ══════════════════════════════════════════════════════════════
+// API KEY SETTINGS
+// ══════════════════════════════════════════════════════════════
+
+async function setupApiKey() {
+    const keyInput = document.getElementById('setting-api-key');
+    const saveBtn = document.getElementById('btn-save-api-key');
+    const testBtn = document.getElementById('btn-test-api-key');
+    const clearBtn = document.getElementById('btn-clear-api-key');
+    const toggleBtn = document.getElementById('btn-toggle-key');
+
+    if (!keyInput) return; // Settings view not in DOM
+
+    // Load existing key (show as masked placeholder)
+    const existingKey = await getAIApiKey();
+    if (existingKey) {
+        keyInput.placeholder = '(key saved — enter new key to replace)';
+    }
+
+    // Toggle show/hide
+    toggleBtn.addEventListener('click', () => {
+        keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
+    });
+
+    // Save key
+    saveBtn.addEventListener('click', async () => {
+        const key = keyInput.value.trim();
+        if (!key) {
+            showApiKeyStatus('Enter a key first.', 'error');
+            return;
+        }
+        await saveAIApiKey(key);
+        keyInput.value = '';
+        keyInput.placeholder = '(key saved — enter new key to replace)';
+        showApiKeyStatus('API key saved.', 'success');
+        // Hide AI banner since we now have a key
+        const banner = document.getElementById('ai-status-banner');
+        if (banner) banner.classList.add('hidden');
+    });
+
+    // Clear key
+    clearBtn.addEventListener('click', async () => {
+        await saveAIApiKey(null);
+        keyInput.value = '';
+        keyInput.placeholder = 'AIza...';
+        showApiKeyStatus('API key cleared.', 'neutral');
+        const banner = document.getElementById('ai-status-banner');
+        if (banner) banner.classList.remove('hidden');
+    });
+
+    // Test key by making a minimal Gemini request
+    testBtn.addEventListener('click', async () => {
+        const key = keyInput.value.trim() || (await getAIApiKey());
+        if (!key) {
+            showApiKeyStatus('No API key to test. Enter one first.', 'error');
+            return;
+        }
+
+        showApiKeyStatus('Testing...', 'neutral');
+        testBtn.disabled = true;
+
+        try {
+            const result = await testGeminiKey(key);
+            if (result.ok) {
+                showApiKeyStatus('✓ API key is valid and working.', 'success');
+            } else {
+                showApiKeyStatus(`✗ ${result.message}`, 'error');
+            }
+        } catch (err) {
+            showApiKeyStatus(`✗ Test failed: ${err.message}`, 'error');
+        } finally {
+            testBtn.disabled = false;
+        }
+    });
+
+    // Save on Enter in the input
+    keyInput.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveBtn.click();
+        }
+    });
+}
+
+function showApiKeyStatus(message, type) {
+    const el = document.getElementById('api-key-status');
+    if (!el) return;
+    el.textContent = message;
+    el.className = `api-key-status api-key-status--${type}`;
+    // Auto-clear after 4 seconds
+    clearTimeout(el._statusTimer);
+    el._statusTimer = setTimeout(() => {
+        el.textContent = '';
+        el.className = 'api-key-status';
+    }, 4000);
+}
+
+/**
+ * Make a minimal test call to Gemini to verify the API key.
+ * Sends a tiny prompt and checks for a non-error response.
+ */
+async function testGeminiKey(apiKey) {
+    const { AI } = await import('../shared/constants.js');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    try {
+        const response = await fetch(
+            `${AI.GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: 'Reply with the single word: ok' }] }],
+                }),
+                signal: controller.signal,
+            }
+        );
+        clearTimeout(timeoutId);
+
+        if (response.status === 401 || response.status === 403) {
+            return { ok: false, message: 'Invalid API key (401/403).' };
+        }
+        if (response.status === 429) {
+            return { ok: false, message: 'Quota exceeded (429). Key is valid but rate-limited.' };
+        }
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            return { ok: false, message: `API error ${response.status}: ${text.slice(0, 80)}` };
+        }
+
+        const data = await response.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+            return { ok: true };
+        }
+        return { ok: false, message: 'Unexpected response format.' };
+    } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+            return { ok: false, message: 'Request timed out.' };
+        }
+        return { ok: false, message: err.message };
+    }
 }
 
 // ── Blacklist ────────────────────────────────────────────────

@@ -35,6 +35,12 @@
 
     <!-- Projects view -->
     <div class="view-panel active" id="view-projects">
+      <!-- AI status banner (shown when no API key configured) -->
+      <div class="ai-status-banner hidden" id="ai-status-banner">
+        <span class="ai-status-icon">✨</span>
+        <span class="ai-status-text">Add a Gemini API key in <strong>Settings</strong> for smarter project detection.</span>
+      </div>
+
       <div class="project-list" id="project-list">
         <div class="empty-state" id="projects-empty">
           <p>No projects detected yet.</p>
@@ -55,7 +61,26 @@
     <!-- Settings view -->
     <div class="view-panel" id="view-settings">
       <div class="settings-panel">
-        <h3 class="settings-heading">Clustering Parameters</h3>
+        <h3 class="settings-heading">AI Provider</h3>
+
+        <label class="settings-label">
+          Gemini API Key
+          <span class="settings-hint">Get a free key at <a class="settings-link" href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a></span>
+          <div class="api-key-row">
+            <input type="password" class="settings-input api-key-input" id="setting-api-key" placeholder="AIza..." autocomplete="off" />
+            <button class="btn btn-secondary" id="btn-toggle-key" title="Show/hide key">👁</button>
+          </div>
+        </label>
+
+        <div class="api-key-actions">
+          <button class="btn btn-primary" id="btn-save-api-key">Save key</button>
+          <button class="btn btn-secondary" id="btn-test-api-key">Test</button>
+          <button class="btn btn-secondary btn-clear-api-key" id="btn-clear-api-key" title="Remove API key">Clear</button>
+        </div>
+
+        <div class="api-key-status" id="api-key-status"></div>
+
+        <h3 class="settings-heading settings-heading--section">Clustering Parameters</h3>
 
         <label class="settings-label">
           Session gap (minutes)

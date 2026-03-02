@@ -1067,6 +1067,87 @@ body {
   margin-left: var(--space-sm);
 }
 
+/* ── API Key UI ────────────────────────────────────────────── */
+
+.settings-heading--section {
+  margin-top: var(--space-lg);
+}
+
+.settings-link {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.settings-link:hover {
+  text-decoration: underline;
+}
+
+.api-key-row {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  margin-top: 4px;
+}
+
+.api-key-input {
+  flex: 1;
+}
+
+.api-key-actions {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.api-key-status {
+  font-size: 0.7rem;
+  min-height: 1.2em;
+  margin-bottom: var(--space-xs);
+}
+
+.api-key-status--success {
+  color: var(--color-success);
+}
+
+.api-key-status--error {
+  color: var(--color-error);
+}
+
+.api-key-status--neutral {
+  color: var(--color-text-secondary);
+}
+
+/* ── AI Banner (shown when no API key configured) ──────────── */
+
+.ai-status-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
+  background: var(--color-accent-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.ai-status-banner.hidden {
+  display: none;
+}
+
+.ai-status-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ai-status-text strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 /* ── Blacklist ─────────────────────────────────────────────── */
 
 .blacklist-add {
