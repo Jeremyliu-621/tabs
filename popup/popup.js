@@ -64,6 +64,56 @@ async function init() {
 let isLoadingData = false;
 let lastRenderedTimestamp = 0;
 
+// ── Delete confirmation ───────────────────────────────────────
+
+/**
+ * Show inline delete confirmation on a button.
+ * Replaces the button with "Delete?" + Yes/No for 3 seconds.
+ * Calls onConfirm if the user confirms, otherwise restores the button.
+ */
+function confirmDelete(btn, onConfirm) {
+    const parent = btn.parentNode;
+    if (!parent) return;
+
+    // Create confirm / cancel buttons
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-danger';
+    confirmBtn.textContent = 'Yes, delete';
+    confirmBtn.style.fontSize = '0.65rem';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.fontSize = '0.65rem';
+
+    // Replace delete button with the pair
+    parent.replaceChild(confirmBtn, btn);
+    parent.insertBefore(cancelBtn, confirmBtn.nextSibling);
+
+    // Auto-revert after 3 seconds
+    const timer = setTimeout(restore, 3000);
+
+    function restore() {
+        clearTimeout(timer);
+        if (confirmBtn.parentNode === parent) parent.removeChild(confirmBtn);
+        if (cancelBtn.parentNode === parent) parent.removeChild(cancelBtn);
+        if (!btn.parentNode) parent.appendChild(btn);
+    }
+
+    confirmBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearTimeout(timer);
+        if (confirmBtn.parentNode === parent) parent.removeChild(confirmBtn);
+        if (cancelBtn.parentNode === parent) parent.removeChild(cancelBtn);
+        onConfirm();
+    });
+
+    cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        restore();
+    });
+}
+
 // ── Deletion queue ────────────────────────────────────────────
 // Tracks project IDs being deleted so renderProjects can skip them,
 // and processes deletions sequentially to avoid save-race conditions.
@@ -614,7 +664,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            deleteProject(project.id);
+            confirmDelete(deleteBtn, () => deleteProject(project.id));
         });
 
         actions.appendChild(restoreBtn);
@@ -682,7 +732,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            deleteProject(project.id);
+            confirmDelete(deleteBtn, () => deleteProject(project.id));
         });
 
         actionsLeft.appendChild(includeSubBranchesToggle);
