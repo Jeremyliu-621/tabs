@@ -18,6 +18,8 @@ import {
     getClusteringSettings,
     saveClusteringSettings,
     getTabEvents,
+    getAIApiKey,
+    saveAIApiKey,
 } from '../background/storage.js';
 import { TRACKING, CLUSTERING } from '../shared/constants.js';
 import { formatTimeAgo, generateId } from '../shared/utils.js';
@@ -122,9 +124,9 @@ async function loadData() {
     if (isLoadingData) {
         return;
     }
-    
+
     isLoadingData = true;
-    
+
     try {
         // 1. Load cached projects immediately for instant display (only if newer)
         const cached = await getCachedProjects();
@@ -167,7 +169,7 @@ async function loadData() {
             renderArchivedProjects(archived);
             lastRenderedTimestamp = projectsTimestamp;
         }
-        
+
         // Always update analytics (they don't cause project re-renders)
         renderDomains(analytics.domainFrequency);
         renderConnections(analytics.coOccurrencePairs);
@@ -209,16 +211,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         // Check if cache actually changed (compare timestamps)
         const newCache = changes.ai_cache.newValue;
         const newTimestamp = newCache?.timestamp || 0;
-        
+
         // Only reload if timestamp is newer (cache actually updated)
         if (newTimestamp > lastCacheTimestamp) {
             lastCacheTimestamp = newTimestamp;
-            
+
             // Debounce: wait 200ms before reloading to batch rapid updates
             if (storageUpdateTimer) {
                 clearTimeout(storageUpdateTimer);
             }
-            
+
             storageUpdateTimer = setTimeout(() => {
                 loadData();
                 storageUpdateTimer = null;
@@ -270,17 +272,17 @@ let renderedProjects = new Map(); // projectId -> project data hash
  */
 function projectHash(project) {
     if (!project) return '';
-    
+
     // Hash based on key properties that affect display (excluding lastAccessed)
     const key = `${project.id}|${project.name}|${project.branches?.length || 0}|${project.starred}|${project.archived}`;
-    
+
     // Include actual branch/tab content, not just counts
     // This ensures we detect when tabs are added/removed or branches change
     const branchInfo = project.branches?.map(b => {
         const tabUrls = b.tabs?.map(t => t.url).sort().join(',') || '';
         return `${b.domain}:${b.tabs?.length || 0}:${tabUrls.substring(0, 100)}`; // Limit URL length for hash
     }).join('|') || '';
-    
+
     return `${key}|${branchInfo}`;
 }
 
@@ -305,7 +307,7 @@ function renderProjects(projects) {
     // Build map of incoming projects by ID
     const incomingProjects = new Map();
     const incomingIds = new Set();
-    
+
     for (const project of projects) {
         if (!project.id) {
             console.warn('[Popup] Project missing ID:', project);
@@ -329,13 +331,13 @@ function renderProjects(projects) {
     // Update or create projects
     for (const project of projects) {
         if (!project.id) continue;
-        
+
         const existingHash = renderedProjects.get(project.id);
         const newHash = projectHash(project);
-        
+
         // Find existing card
         const existingCard = list.querySelector(`[data-project-id="${project.id}"]`);
-        
+
         // Only update if project actually changed
         if (existingHash === newHash && existingCard) {
             // No changes, skip update
@@ -352,15 +354,15 @@ function renderProjects(projects) {
             const card = createProjectCard(project, false, projects.length);
             list.appendChild(card);
         }
-        
+
         // Update hash
         renderedProjects.set(project.id, newHash);
     }
-    
+
     // Reorder cards to match projects array order (only if order actually changed)
     const currentCards = Array.from(list.querySelectorAll('.project-card'));
     const projectIds = projects.map(p => p.id).filter(Boolean);
-    
+
     // Check if order is correct by comparing current order with desired order
     let needsReorder = false;
     if (currentCards.length !== projectIds.length) {
@@ -374,7 +376,7 @@ function renderProjects(projects) {
             }
         }
     }
-    
+
     // Only reorder if order actually changed
     if (needsReorder && projectIds.length > 0) {
         // Use DocumentFragment to batch DOM operations
@@ -401,14 +403,14 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
     // ── Header row
     const header = document.createElement('div');
     header.className = 'project-header';
-    
+
     // Source badge
-    const sourceBadge = project.source === 'ai' 
+    const sourceBadge = project.source === 'ai'
         ? '<span class="source-badge source-badge--ai" title="AI Enhanced">✨</span>'
-        : project.autoDetected 
+        : project.autoDetected
             ? '<span class="source-badge source-badge--heuristic" title="Auto">Auto</span>'
             : '';
-    
+
     header.innerHTML = `
     <span class="project-expand">▶</span>
     <span class="project-name">${esc(project.name)}</span>
@@ -419,7 +421,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
               title="Star project">${project.starred ? '★' : '☆'}</button>
     </div>
   `;
-    
+
     // Add edit button next to project name (only for non-archived projects)
     if (!isArchived) {
         const nameEl = header.querySelector('.project-name');
@@ -464,7 +466,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         if (e.target.closest('.project-edit-btn')) return;
         if (e.target.closest('.project-name-edit-inline')) return;
         if (e.target.closest('.project-meta')) return;
-        
+
         // In edit mode, only allow toggling when clicking the expand arrow
         const isEditing = card.classList.contains('editing');
         if (isEditing) {
@@ -474,7 +476,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
                 return; // Only allow toggling via the arrow in edit mode
             }
         }
-        
+
         card.classList.toggle('expanded');
 
         // Persist expanded state
@@ -623,10 +625,10 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         // Active projects: Clean button layout with toggle for sub-branches
         const actionsLeft = document.createElement('div');
         actionsLeft.className = 'project-actions-left';
-        
+
         const actionsRight = document.createElement('div');
         actionsRight.className = 'project-actions-right';
-        
+
         // Toggle for including sub-branches
         const includeSubBranchesToggle = document.createElement('label');
         includeSubBranchesToggle.className = 'include-sub-branches-toggle';
@@ -639,7 +641,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         includeSubBranchesToggle.appendChild(checkbox);
         includeSubBranchesToggle.appendChild(label);
         includeSubBranchesToggle.title = 'Include sub-branches (all tabs)';
-        
+
         // Update toggle styling when checked
         checkbox.addEventListener('change', () => {
             if (checkbox.checked) {
@@ -648,13 +650,13 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
                 includeSubBranchesToggle.classList.remove('checked');
             }
         });
-        
+
         // Switch button
         const switchBtn = document.createElement('button');
         switchBtn.className = 'btn btn-primary';
         switchBtn.textContent = 'Switch';
         switchBtn.addEventListener('click', () => {
-            const allUrls = checkbox.checked 
+            const allUrls = checkbox.checked
                 ? getAllProjectUrlsWithSubBranches(project)
                 : getAllProjectUrls(project);
             if (allUrls.length > 0) {
@@ -668,7 +670,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         openBtn.className = 'btn btn-primary';
         openBtn.textContent = 'Open';
         openBtn.addEventListener('click', () => {
-            const allUrls = checkbox.checked 
+            const allUrls = checkbox.checked
                 ? getAllProjectUrlsWithSubBranches(project)
                 : getAllProjectUrls(project);
             if (allUrls.length > 0) {
@@ -689,7 +691,7 @@ function createProjectCard(project, isArchived = false, totalProjectCount = 1) {
         actionsLeft.appendChild(switchBtn);
         actionsLeft.appendChild(openBtn);
         actionsRight.appendChild(deleteBtn);
-        
+
         actions.appendChild(actionsLeft);
         actions.appendChild(actionsRight);
     }
@@ -964,12 +966,12 @@ function setupModal() {
  */
 async function toggleEditMode(card, project) {
     const isEditing = card.classList.contains('editing');
-    
+
     // Prevent multiple rapid clicks
     if (card._isEnteringEditMode) {
         return;
     }
-    
+
     if (isEditing) {
         // Exit edit mode and save
         await exitEditMode(card, project);
@@ -991,19 +993,19 @@ async function exitEditMode(card, project) {
         console.error('[Popup] Cannot exit edit mode: no project ID');
         return;
     }
-    
+
     // Get fresh project data if not provided
     let projectData = project;
     if (!projectData || !projectData.branches) {
         const allProjects = await getProjects();
         projectData = allProjects.find((x) => x.id === projectId) || card._projectData;
     }
-    
+
     if (!projectData) {
         console.error('[Popup] Cannot exit edit mode: project data not found');
         return;
     }
-    
+
     // Save the edits first
     try {
         await saveInlineEdits(card, projectData);
@@ -1011,13 +1013,13 @@ async function exitEditMode(card, project) {
         console.error('[Popup] Error saving edits:', err);
         // Still exit edit mode even if save fails
     }
-    
+
     // Remove editing class before re-rendering
     card.classList.remove('editing');
-    
+
     // Force re-render by clearing the hash for this project
     renderedProjects.delete(projectId);
-    
+
     // Re-render the card to show normal view (this will replace the card)
     await loadData();
 }
@@ -1030,9 +1032,9 @@ async function enterEditMode(card, project) {
     if (card.classList.contains('editing')) {
         return;
     }
-    
+
     card.classList.add('editing');
-    
+
     // Load fresh project data
     const allProjects = await getProjects();
     const currentProject = allProjects.find((x) => x.id === project.id);
@@ -1046,11 +1048,11 @@ async function enterEditMode(card, project) {
     const nameEl = card.querySelector('.project-name');
     if (nameEl && !nameEl.querySelector('input')) {
         const originalName = currentProject.name;
-    const input = document.createElement('input');
-    input.type = 'text';
+        const input = document.createElement('input');
+        input.type = 'text';
         input.className = 'project-name-edit-inline';
-    input.value = originalName;
-    input.style.cssText = `
+        input.value = originalName;
+        input.style.cssText = `
         font-family: inherit;
         font-size: 0.95rem;
         font-weight: 600;
@@ -1090,7 +1092,7 @@ async function enterEditMode(card, project) {
             btn.style.display = 'none';
             btn.dataset.wasVisible = 'true';
         });
-        
+
         // Add or show save button
         let saveBtn = actions.querySelector('.btn-save-inline');
         if (!saveBtn) {
@@ -1125,14 +1127,14 @@ async function enterEditMode(card, project) {
 function addEditControlsToBranches(branchContainer, project) {
     // Remove any existing edit checkboxes first to prevent duplicates
     branchContainer.querySelectorAll('.branch-edit-checkbox, .tab-edit-checkbox').forEach(cb => cb.remove());
-    
+
     // Check if we have the normal branch structure or the skipped branch display.
     // Use :scope > .branch-tabs to find a tab list that is a direct child of
     // branchContainer (the "skipped branch" layout). In normal branch display,
     // .branch-tabs elements are nested inside .branch-item > .branch-content.
     const branchItems = branchContainer.querySelectorAll('.branch-item');
     const directTabList = branchContainer.querySelector(':scope > .branch-tabs');
-    
+
     if (branchItems.length > 0) {
         // Normal branch structure
         branchItems.forEach((branchItem, index) => {
@@ -1148,34 +1150,34 @@ function addEditControlsToBranches(branchContainer, project) {
                     .map(node => node.textContent)
                     .join('')
                     .trim();
-                
+
                 // Fallback: if no text nodes, try to get textContent and clean it
                 const originalText = textNodes || branchNameEl.textContent.trim();
-                
+
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.className = 'branch-edit-checkbox';
                 checkbox.checked = true;
                 checkbox.dataset.branchId = branch.id || branch.domain;
                 checkbox.style.cssText = 'margin-right: 6px; cursor: pointer;';
-                
+
                 // Stop checkbox clicks from propagating to branch name
                 checkbox.addEventListener('click', (e) => {
                     e.stopPropagation();
                 });
-                
+
                 // Override the branch name click handler to only toggle checkbox in edit mode
                 // Remove the original click listener by cloning and replacing
                 const newBranchName = branchNameEl.cloneNode(false);
                 newBranchName.className = branchNameEl.className;
                 newBranchName.title = branchNameEl.title;
-                
+
                 // Add checkbox and text to the new element
                 newBranchName.appendChild(checkbox);
                 newBranchName.appendChild(document.createTextNode(originalText));
-                
+
                 branchNameEl.parentNode.replaceChild(newBranchName, branchNameEl);
-                
+
                 // Add new click handler that only toggles checkbox (doesn't open website)
                 newBranchName.style.cursor = 'pointer';
                 newBranchName.addEventListener('click', (e) => {
@@ -1195,53 +1197,53 @@ function addEditControlsToBranches(branchContainer, project) {
                 });
             }
 
-        // Add checkboxes to tabs
-        const tabLinks = branchItem.querySelectorAll('.branch-tab-link');
-        
-        // Create a map of tab titles to actual tabs (matching the deduplication logic)
-        const tabMap = new Map();
-        branch.tabs.forEach(tab => {
-            if (!tabMap.has(tab.title)) {
-                tabMap.set(tab.title, tab);
-            }
-        });
-        
-        tabLinks.forEach((tabLink) => {
-            if (tabLink.textContent.startsWith('+')) return; // Skip "more" indicator
-            
-            // Find the tab by matching title
-            const tabTitle = tabLink.textContent.trim();
-            const tab = tabMap.get(tabTitle);
-            if (!tab) return;
+            // Add checkboxes to tabs
+            const tabLinks = branchItem.querySelectorAll('.branch-tab-link');
 
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'tab-edit-checkbox';
-            checkbox.checked = true;
-            checkbox.dataset.tabUrl = tab.url;
-            checkbox.style.cssText = 'margin-right: 4px; cursor: pointer;';
-            
-            // Insert checkbox before tab link
-            const tabItem = tabLink.closest('.branch-tab');
-            if (tabItem) {
-                tabItem.insertBefore(checkbox, tabLink);
-                
-                // Make tab clickable to toggle checkbox
-                tabLink.style.cursor = 'pointer';
-                tabLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (e.target !== checkbox) {
-                        checkbox.checked = !checkbox.checked;
-                    }
-                });
-            }
-        });
+            // Create a map of tab titles to actual tabs (matching the deduplication logic)
+            const tabMap = new Map();
+            branch.tabs.forEach(tab => {
+                if (!tabMap.has(tab.title)) {
+                    tabMap.set(tab.title, tab);
+                }
+            });
+
+            tabLinks.forEach((tabLink) => {
+                if (tabLink.textContent.startsWith('+')) return; // Skip "more" indicator
+
+                // Find the tab by matching title
+                const tabTitle = tabLink.textContent.trim();
+                const tab = tabMap.get(tabTitle);
+                if (!tab) return;
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'tab-edit-checkbox';
+                checkbox.checked = true;
+                checkbox.dataset.tabUrl = tab.url;
+                checkbox.style.cssText = 'margin-right: 4px; cursor: pointer;';
+
+                // Insert checkbox before tab link
+                const tabItem = tabLink.closest('.branch-tab');
+                if (tabItem) {
+                    tabItem.insertBefore(checkbox, tabLink);
+
+                    // Make tab clickable to toggle checkbox
+                    tabLink.style.cursor = 'pointer';
+                    tabLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        if (e.target !== checkbox) {
+                            checkbox.checked = !checkbox.checked;
+                        }
+                    });
+                }
+            });
         });
     } else if (directTabList && project.branches && project.branches.length === 1) {
         // Skipped branch display - single branch with tabs shown directly
         const branch = project.branches[0];
         const tabLinks = directTabList.querySelectorAll('.branch-tab-link');
-        
+
         // Create a map of displayed tab titles to actual tabs
         const tabMap = new Map();
         branch.tabs.forEach(tab => {
@@ -1249,10 +1251,10 @@ function addEditControlsToBranches(branchContainer, project) {
                 tabMap.set(tab.title, tab);
             }
         });
-        
+
         tabLinks.forEach((tabLink) => {
             if (tabLink.textContent.startsWith('+')) return; // Skip "more" indicator
-            
+
             // Find the tab by matching title
             const tabTitle = tabLink.textContent.trim();
             const tab = tabMap.get(tabTitle);
@@ -1264,12 +1266,12 @@ function addEditControlsToBranches(branchContainer, project) {
             checkbox.checked = true;
             checkbox.dataset.tabUrl = tab.url;
             checkbox.style.cssText = 'margin-right: 4px; cursor: pointer;';
-            
+
             // Insert checkbox before tab link
             const tabItem = tabLink.closest('.branch-tab');
             if (tabItem) {
                 tabItem.insertBefore(checkbox, tabLink);
-                
+
                 // Make tab clickable to toggle checkbox
                 tabLink.style.cursor = 'pointer';
                 tabLink.addEventListener('click', (e) => {
@@ -1291,9 +1293,9 @@ async function saveInlineEdits(card, project) {
         console.error('[Popup] Invalid project data for saving:', project);
         return;
     }
-    
-            const allProjects = await getProjects();
-            const p = allProjects.find((x) => x.id === project.id);
+
+    const allProjects = await getProjects();
+    const p = allProjects.find((x) => x.id === project.id);
     if (!p) {
         console.error('[Popup] Project not found for saving:', project.id);
         return;
@@ -1309,7 +1311,7 @@ async function saveInlineEdits(card, project) {
     const branchContainer = card.querySelector('.project-branches');
     if (!branchContainer) {
         console.warn('[Popup] No branch container found, saving name only');
-                await saveProjects(allProjects);
+        await saveProjects(allProjects);
         return;
     }
 
@@ -1329,12 +1331,12 @@ async function saveInlineEdits(card, project) {
                     branchCheckbox = branchName.querySelector('.branch-edit-checkbox');
                 }
             }
-            
+
             if (!branchCheckbox) {
                 console.warn('[Popup] No branch checkbox found for branch item:', index);
                 return;
             }
-            
+
             if (!branchCheckbox.checked) {
                 return; // Skip unchecked branches
             }
@@ -1344,17 +1346,17 @@ async function saveInlineEdits(card, project) {
                 console.warn('[Popup] Branch checkbox missing branchId:', branchCheckbox);
                 return;
             }
-            
+
             let originalBranch = project.branches.find(
                 (b) => (b.id && b.id === branchId) || b.domain === branchId
             );
-            
+
             // Fallback: try matching by index if ID matching fails
             if (!originalBranch && index < project.branches.length) {
                 originalBranch = project.branches[index];
                 console.warn('[Popup] Branch ID match failed, using index fallback:', index);
             }
-            
+
             if (!originalBranch) {
                 console.warn('[Popup] Original branch not found for ID:', branchId, 'or index:', index, 'Available branches:', project.branches.map(b => b.id || b.domain));
                 return;
@@ -1363,7 +1365,7 @@ async function saveInlineEdits(card, project) {
             // Collect selected tabs
             const tabCheckboxes = branchItem.querySelectorAll('.tab-edit-checkbox:checked');
             const selectedTabs = [];
-            
+
             tabCheckboxes.forEach((tabCheckbox) => {
                 const tabUrl = tabCheckbox.dataset.tabUrl;
                 const originalTab = originalBranch.tabs.find((t) => t.url === tabUrl);
@@ -1385,7 +1387,7 @@ async function saveInlineEdits(card, project) {
         const branch = project.branches[0];
         const tabCheckboxes = directTabList.querySelectorAll('.tab-edit-checkbox:checked');
         const selectedTabs = [];
-        
+
         tabCheckboxes.forEach((tabCheckbox) => {
             const tabUrl = tabCheckbox.dataset.tabUrl;
             const originalTab = branch.tabs.find((t) => t.url === tabUrl);
@@ -1446,6 +1448,13 @@ async function loadSettings() {
     document.getElementById('setting-archive-threshold').value = Math.round(settings.archiveThreshold / (24 * 60 * 60 * 1000));
     document.getElementById('setting-overlap-threshold').value = Math.round(settings.overlapThreshold * 100);
     document.getElementById('setting-max-projects').value = settings.maxAutoProjects;
+
+    const apiKey = await getAIApiKey();
+    if (apiKey) {
+        document.getElementById('setting-api-key').value = apiKey;
+    } else {
+        document.getElementById('setting-api-key').value = '';
+    }
 }
 
 async function saveSettings() {
@@ -1467,6 +1476,14 @@ async function saveSettings() {
         overlapThreshold: overlapPct / 100,
         maxAutoProjects: maxProjects,
     });
+
+    // Save AI API key
+    const apiKeyInput = document.getElementById('setting-api-key').value.trim();
+    if (apiKeyInput) {
+        await saveAIApiKey(apiKeyInput);
+    } else {
+        await chrome.storage.local.remove('ai_api_key');
+    }
 
     // Re-run clustering with new settings
     chrome.runtime.sendMessage({ action: 'runClustering' }, () => {

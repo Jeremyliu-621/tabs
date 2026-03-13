@@ -11,6 +11,12 @@ import { runAIClustering, checkAndRunAIClustering } from './ai-clustering.js';
 
 // ── Initialization ───────────────────────────────────────────
 
+// Manually open the side panel when the extension action icon is clicked.
+// This is more reliable than setPanelBehavior during extension reloads.
+chrome.action.onClicked.addListener((tab) => {
+    chrome.sidePanel.open({ windowId: tab.windowId });
+});
+
 chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
         console.log('[Tabs] Extension installed — tracking begins.');
