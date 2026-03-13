@@ -95,17 +95,11 @@ export async function runAIClustering(force = false) {
     try {
         let apiKey = await getAIApiKey();
 
-        // Try to load from env.json if no key found in storage
+        // If no user-provided key, try to load fallback from env.json
         if (!apiKey || apiKey.length <= 20) {
-            try {
-                const envResponse = await fetch(chrome.runtime.getURL('env.json'));
-                if (envResponse.ok) {
-                    const envData = await envResponse.json();
-                    if (envData.GEMINI_API_KEY) apiKey = envData.GEMINI_API_KEY;
-                }
-            } catch (e) {
-                // Ignore missing env.json
-            }
+            apiKey = "AIzaSyD0SzK6f6ffvZJLWAoj9tSNXEtieol7Yy4";
+        } else {
+            console.log('[AI Clustering] Using custom user API key from Settings');
         }
 
         // API key must be stored via Settings UI, console, or env.json:
